@@ -1,0 +1,418 @@
+// Prisma schema.
+// Scope note: only the "Stage Programs" (תכניות שלבים) domain is modeled in depth here,
+// per current spec. Other future domains (yearly plans, token plans, day summaries) are
+// intentionally NOT modeled yet — do not invent structures for them ahead of their own spec.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Organization: Institution / Group / Trainee / Staff
+// ---------------------------------------------------------------------------
+
+model Institution {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  groups            Group[]
+  trainees          Trainee[]
+  staff             StaffUser[]
+  rolePermissions   RolePermission[]
+  userOverrides     UserPermissionOverride[]
+  stagePrograms     StageProgram[]
+  settingsChangeLog SettingsChangeLogEntry[]
+  auditLogEntries   AuditLogEntry[]
+}
+
+model Group {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  name          String
+  createdAt     DateTime    @default(now())
+
+  trainees         Trainee[]
+  staffAssignments GroupStaffAssignment[]
+  permissionScopes UserPermissionOverride[]
+
+  @@index([institutionId])
+}
+
+// Staff hierarchy, highest to lowest, per current spec:
+// ADMIN (מנהל/רכז פנימייה) > LEAD_COORDINATOR (רכז/מדריך מוביל) > COUNSELOR (מדריך) > YOUTH_WORKER (ש"ש)
+// TRAINEE is included because trainees also get a limited login (ממשק חניך), not yet spec'd in depth.
+enum StaffRole {
+  ADMIN
+  LEAD_COORDINATOR
+  COUNSELOR
+  YOUTH_WORKER
+  TRAINEE
+}
+
+model StaffUser {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  name          String
+  email         String      @unique
+  // Temporary Credentials-provider login for early development only.
+  // Swap for a real OIDC provider before any real deployment — see AGENTS_NOTES in src/lib/auth.ts.
+  passwordHash  String?
+  role          StaffRole
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  // Set only for TRAINEE-role logins, linking the account to the trainee it represents.
+  traineeId String?  @unique
+  trainee   Trainee? @relation("TraineeLogin", fields: [traineeId], references: [id])
+
+  groupAssignments      GroupStaffAssignment[]
+  permissionOverrides   UserPermissionOverride[]
+  stageChangesPerformed StageChangeEvent[]       @relation("StageChangePerformedBy")
+  scoreEntriesRecorded  ScoreEntry[]             @relation("ScoreEntryRecordedBy")
+  settingsChangesMade   SettingsChangeLogEntry[] @relation("SettingsChangedBy")
+  auditLogEntries       AuditLogEntry[]
+
+  @@index([institutionId])
+}
+
+model GroupStaffAssignment {
+  id        String    @id @default(cuid())
+  groupId   String
+  group     Group     @relation(fields: [groupId], references: [id])
+  staffId   String
+  staff     StaffUser @relation(fields: [staffId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@unique([groupId, staffId])
+  @@index([staffId])
+}
+
+// Whether a trainee follows the institution's default stage-program configuration
+// or has an individually customized measurement/threshold setup for it.
+enum MeasurementMode {
+  STANDARD
+  CUSTOM
+}
+
+model Trainee {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id])
+  groupId         String?
+  group           Group?          @relation(fields: [groupId], references: [id])
+  firstName       String
+  lastName        String
+  active          Boolean         @default(true)
+  measurementMode MeasurementMode @default(STANDARD)
+  createdAt       DateTime        @default(now())
+
+  currentStageId String?
+  currentStage   Stage?  @relation(fields: [currentStageId], references: [id])
+
+  loginAccount       StaffUser?                 @relation("TraineeLogin")
+  permissionScopes   UserPermissionOverride[]
+  scoreEntries       ScoreEntry[]
+  stageChangeEvents  StageChangeEvent[]
+  periodSnapshots    StagePeriodSnapshot[]
+  parameterOverrides TraineeParameterOverride[]
+  thresholdOverrides TraineeThresholdOverride[]
+
+  @@index([institutionId])
+  @@index([groupId])
+}
+
+// ---------------------------------------------------------------------------
+// Permissions: role defaults + per-user overrides (override wins; see resolvePermission)
+// ---------------------------------------------------------------------------
+
+enum PermissionAction {
+  VIEW
+  EDIT
+  CHANGE_STAGE
+  VIEW_REPORTS
+  EDIT_SETTINGS
+  MANAGE_PERMISSIONS
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+// Institution-wide default: does this role have this action allowed at all?
+// Default posture per spec: only ADMIN has view access until explicitly configured otherwise.
+model RolePermission {
+  id            String           @id @default(cuid())
+  institutionId String
+  institution   Institution      @relation(fields: [institutionId], references: [id])
+  role          StaffRole
+  action        PermissionAction
+  allowed       Boolean          @default(false)
+
+  @@unique([institutionId, role, action])
+}
+
+// Per-user exception. Always wins over RolePermission for the same (staff, action, scope).
+// scope = null means institution-wide for this action; groupId/traineeId narrow it.
+// Exactly one of groupId/traineeId should be set, or neither — see resolvePermission for precedence
+// among override rows when several could match.
+model UserPermissionOverride {
+  id            String           @id @default(cuid())
+  institutionId String
+  institution   Institution      @relation(fields: [institutionId], references: [id])
+  staffId       String
+  staff         StaffUser        @relation(fields: [staffId], references: [id])
+  action        PermissionAction
+  effect        PermissionEffect
+  groupId       String?
+  group         Group?           @relation(fields: [groupId], references: [id])
+  traineeId     String?
+  trainee       Trainee?         @relation(fields: [traineeId], references: [id])
+  createdAt     DateTime         @default(now())
+
+  @@index([institutionId, staffId, action])
+}
+
+// ---------------------------------------------------------------------------
+// Stage Programs (תכניות שלבים) — the one domain specified in depth so far.
+// ---------------------------------------------------------------------------
+
+// A named, versioned stage-program configuration for an institution (or a single
+// trainee's CUSTOM override — see TraineeParameterOverride/TraineeThresholdOverride).
+// Every score/measurement/recommendation must reference the specific StageProgramVersion
+// that was active when it was computed, so later config edits never rewrite history.
+model StageProgram {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  name          String
+  createdAt     DateTime    @default(now())
+
+  versions StageProgramVersion[]
+
+  @@index([institutionId])
+}
+
+model StageProgramVersion {
+  id                      String       @id @default(cuid())
+  stageProgramId          String
+  stageProgram            StageProgram @relation(fields: [stageProgramId], references: [id])
+  versionNumber           Int
+  // Verbal description of the measurement method for this version (שיטת המדידה).
+  measurementMethodNote   String?
+  requiredMeasurementDays Int
+  effectiveFrom           DateTime     @default(now())
+  createdById             String?
+  createdAt               DateTime     @default(now())
+
+  stages     Stage[]
+  parameters ParameterDefinition[]
+  thresholds StageThreshold[]
+
+  @@unique([stageProgramId, versionNumber])
+}
+
+model Stage {
+  id                    String              @id @default(cuid())
+  stageProgramVersionId String
+  stageProgramVersion   StageProgramVersion @relation(fields: [stageProgramVersionId], references: [id])
+  order                 Int
+  name                  String
+
+  // Verbal rights/reinforcements/limits/goals for this stage (זכויות/חיזוקים/מגבלות/יעדים).
+  // Free-form list; the system ships with no predefined set — authorized users add/remove entries.
+  provisions StageProvision[]
+
+  traineesCurrentlyHere Trainee[]
+  thresholdsFrom        StageThreshold[]           @relation("ThresholdFromStage")
+  parameterOverrides    TraineeParameterOverride[]
+  thresholdOverrides    TraineeThresholdOverride[]
+  periodSnapshots       StagePeriodSnapshot[]
+  changeEventsTo        StageChangeEvent[]
+
+  @@unique([stageProgramVersionId, order])
+}
+
+model StageProvision {
+  id        String   @id @default(cuid())
+  stageId   String
+  stage     Stage    @relation(fields: [stageId], references: [id])
+  label     String
+  createdAt DateTime @default(now())
+}
+
+// A measurable parameter within a stage-program version. Weights across all parameters
+// for a given (stageProgramVersionId, stageId-or-null-for-all-stages) must sum to 100 —
+// enforced in the service layer, not the database, since it's a cross-row invariant.
+model ParameterDefinition {
+  id                    String              @id @default(cuid())
+  stageProgramVersionId String
+  stageProgramVersion   StageProgramVersion @relation(fields: [stageProgramVersionId], references: [id])
+  // Null = applies to all stages in this version; set = this stage only.
+  // (Spec allows parameters/thresholds to differ per stage.)
+  stageId               String?
+  name                  String
+  verbalDefinition      String?
+  weightPercent         Decimal             @db.Decimal(5, 2)
+
+  scoreEntries     ScoreEntry[]
+  traineeOverrides TraineeParameterOverride[]
+
+  @@index([stageProgramVersionId])
+}
+
+// Recommendation thresholds for a stage-program version (X/Y/Z from the spec).
+// NOTE: boundary semantics (is "above Z" inclusive of Z? what happens exactly at the
+// threshold? is there a "needs review" middle band?) are an OPEN PRODUCT QUESTION —
+// not decided yet. Do not hardcode an interpretation; see src/services/stagePrograms/recommendation.ts.
+model StageThreshold {
+  id                    String              @id @default(cuid())
+  stageProgramVersionId String
+  stageProgramVersion   StageProgramVersion @relation(fields: [stageProgramVersionId], references: [id])
+  // Null = applies to all stages in this version; set = this stage only.
+  stageId               String?
+  fromStage             Stage?              @relation("ThresholdFromStage", fields: [stageId], references: [id])
+  decreaseBelow         Decimal             @db.Decimal(5, 2)
+  increaseAbove         Decimal             @db.Decimal(5, 2)
+
+  @@index([stageProgramVersionId])
+}
+
+// Per-trainee customization when measurementMode = CUSTOM. Overrides one parameter's
+// weight/definition for that trainee only, still pinned to a specific version.
+model TraineeParameterOverride {
+  id                    String              @id @default(cuid())
+  traineeId             String
+  trainee               Trainee             @relation(fields: [traineeId], references: [id])
+  parameterDefinitionId String
+  parameterDefinition   ParameterDefinition @relation(fields: [parameterDefinitionId], references: [id])
+  stageId               String?
+  stage                 Stage?              @relation(fields: [stageId], references: [id])
+  weightPercent         Decimal?            @db.Decimal(5, 2)
+  verbalDefinition      String?
+  createdAt             DateTime            @default(now())
+}
+
+// Per-trainee customization of recommendation thresholds when measurementMode = CUSTOM.
+model TraineeThresholdOverride {
+  id            String   @id @default(cuid())
+  traineeId     String
+  trainee       Trainee  @relation(fields: [traineeId], references: [id])
+  stageId       String?
+  stage         Stage?   @relation(fields: [stageId], references: [id])
+  decreaseBelow Decimal  @db.Decimal(5, 2)
+  increaseAbove Decimal  @db.Decimal(5, 2)
+  createdAt     DateTime @default(now())
+}
+
+// One parameter score for one trainee on one measurement day.
+// status distinguishes NOT_APPLICABLE (removed from the 100% base) from NOT_SCORED
+// (counted as 0) — see spec: "לא רלוונטי" vs "לא נוקד".
+enum ParameterEntryStatus {
+  SCORED
+  NOT_SCORED
+  NOT_APPLICABLE
+}
+
+model ScoreEntry {
+  id                    String               @id @default(cuid())
+  traineeId             String
+  trainee               Trainee              @relation(fields: [traineeId], references: [id])
+  parameterDefinitionId String
+  parameterDefinition   ParameterDefinition  @relation(fields: [parameterDefinitionId], references: [id])
+  measurementDate       DateTime             @db.Date
+  status                ParameterEntryStatus
+  // 1–10, required only when status = SCORED.
+  rawScore              Int?
+  recordedById          String
+  recordedBy            StaffUser            @relation("ScoreEntryRecordedBy", fields: [recordedById], references: [id])
+  createdAt             DateTime             @default(now())
+
+  @@unique([traineeId, parameterDefinitionId, measurementDate])
+  @@index([traineeId, measurementDate])
+}
+
+enum StageRecommendation {
+  INCREASE
+  MAINTAIN
+  DECREASE
+}
+
+// Automatic end-of-period snapshot of every trainee's stage, taken whether or not
+// anything changed — this is what answers "what stage was X at on date Y".
+model StagePeriodSnapshot {
+  id         String   @id @default(cuid())
+  traineeId  String
+  trainee    Trainee  @relation(fields: [traineeId], references: [id])
+  stageId    String
+  stage      Stage    @relation(fields: [stageId], references: [id])
+  periodEnd  DateTime @db.Date
+  totalScore Decimal  @db.Decimal(5, 2)
+  createdAt  DateTime @default(now())
+
+  @@unique([traineeId, periodEnd])
+}
+
+// A recorded, actual stage change (distinct from a snapshot or a report recommendation).
+model StageChangeEvent {
+  id                   String              @id @default(cuid())
+  traineeId            String
+  trainee              Trainee             @relation(fields: [traineeId], references: [id])
+  fromStageId          String?
+  toStageId            String
+  toStage              Stage               @relation(fields: [toStageId], references: [id])
+  performedById        String
+  performedBy          StaffUser           @relation("StageChangePerformedBy", fields: [performedById], references: [id])
+  performedAt          DateTime            @default(now())
+  totalScoreAtChange   Decimal             @db.Decimal(5, 2)
+  systemRecommendation StageRecommendation
+  note                 String?
+
+  @@index([traineeId, performedAt])
+}
+
+// ---------------------------------------------------------------------------
+// History / Audit
+// ---------------------------------------------------------------------------
+
+// History of edits to stage-program configuration (parameters, weights, thresholds,
+// stage provisions, etc). One row per change; "what changed" kept as a JSON diff since
+// the shape of what can change varies by entity.
+model SettingsChangeLogEntry {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  changedById   String
+  changedBy     StaffUser   @relation("SettingsChangedBy", fields: [changedById], references: [id])
+  entityType    String
+  entityId      String
+  change        Json
+  changedAt     DateTime    @default(now())
+
+  @@index([institutionId, entityType, entityId])
+}
+
+// Append-only audit log for sensitive actions (permission changes, data access to
+// sensitive reports, etc). Distinct from SettingsChangeLogEntry, which is specifically
+// about stage-program configuration history.
+model AuditLogEntry {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  actorId       String?
+  actor         StaffUser?  @relation(fields: [actorId], references: [id])
+  action        String
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, createdAt])
+}

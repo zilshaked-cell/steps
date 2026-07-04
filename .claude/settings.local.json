@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(docker --version)",
+      "PowerShell(Get-Command winget -ErrorAction SilentlyContinue; Get-Command choco -ErrorAction SilentlyContinue; echo \"---\"; Test-Path \"C:\\\\Program Files\\\\nodejs\"; Test-Path \"$env:LOCALAPPDATA\\\\Programs\")",
+      "PowerShell(winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements)",
+      "PowerShell(winget install --id Git.Git -e --accept-package-agreements --accept-source-agreements)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); node --version; npm --version; git --version)",
+      "Bash(mkdir -p \"src/app/api/auth/[...nextauth]\")",
+      "PowerShell(winget search PostgreSQL 2>&1)",
+      "PowerShell(winget install --id PostgreSQL.PostgreSQL.17 -e --accept-package-agreements --accept-source-agreements)",
+      "Bash(find \"/c/Program Files/PostgreSQL/17/data\" -maxdepth 1 -name \"pg_hba.conf\" 2>&1)",
+      "Read(//c/Program Files/PostgreSQL/17/data/**)",
+      "Bash(cp \"/c/Program Files/PostgreSQL/17/data/pg_hba.conf\" \"/c/Program Files/PostgreSQL/17/data/pg_hba.conf.bak\")",
+      "PowerShell(Restart-Service postgresql-x64-17 -Force)",
+      "PowerShell(Get-Service postgresql-x64-17)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Still\\Dropbox\\steps\\src\\app\\api\\auth",
+      "C:\\Program Files\\PostgreSQL\\17\\data"
+    ]
+  }
+}
