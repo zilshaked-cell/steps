@@ -17,11 +17,19 @@
       "PowerShell(Restart-Service postgresql-x64-17 -Force)",
       "PowerShell(Get-Service postgresql-x64-17)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000)",
-      "Bash(curl -s http://localhost:3000)"
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(find . -maxdepth 3 -iname \"*plan*\" -not -path \"./node_modules/*\" -not -path \"./.git/*\" -not -path \"./.next/*\")",
+      "Bash(ls -la .claude)",
+      "Bash(mkdir -p \"src/app/groups/[groupId]\" \"src/app/trainees/[traineeId]\")",
+      "Bash(curl -s http://localhost:3000/groups/cmr69oa45000ppokrt4a9q6dw)",
+      "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000)",
+      "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000/groups/cmr69oa45000ppokrt4a9q6dw)",
+      "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000/trainees/cmr69oaf10018pokrwa0nvbhe)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Still\\Dropbox\\steps\\src\\app\\api\\auth",
-      "C:\\Program Files\\PostgreSQL\\17\\data"
+      "C:\\Program Files\\PostgreSQL\\17\\data",
+      "C:\\Users\\Still\\Dropbox\\steps\\src\\app\\groups"
     ]
   }
 }
