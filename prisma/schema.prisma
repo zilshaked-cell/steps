@@ -63,8 +63,8 @@ model StaffUser {
   institution   Institution @relation(fields: [institutionId], references: [id])
   name          String
   email         String      @unique
-  // Temporary Credentials-provider login for early development only.
-  // Swap for a real OIDC provider before any real deployment — see AGENTS_NOTES in src/lib/auth.ts.
+  // Legacy dev password hash from the earlier Credentials-provider bootstrap.
+  // Current login uses Google OAuth and maps the verified Google email to this StaffUser row.
   passwordHash  String?
   role          StaffRole
   active        Boolean     @default(true)
@@ -252,7 +252,9 @@ model StageProvision {
 
 // A measurable parameter within a stage-program version. Weights across all parameters
 // for a given (stageProgramVersionId, stageId-or-null-for-all-stages) must sum to 100 —
-// enforced in the service layer, not the database, since it's a cross-row invariant.
+// this is a cross-row invariant that belongs in the service layer. A pure validator
+// exists for future write paths, but no stage-program create/update service exists
+// today; only seed/tests write these rows.
 model ParameterDefinition {
   id                    String              @id @default(cuid())
   stageProgramVersionId String

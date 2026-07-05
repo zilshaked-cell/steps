@@ -4,7 +4,7 @@
 
 ## סטאק
 
-Next.js (App Router) + TypeScript, PostgreSQL דרך Prisma (עם driver adapter `@prisma/adapter-pg` — Prisma 7 דורש זאת במקום datasource URL ישיר), Auth.js עם ספק Credentials **זמני** (ראו `src/lib/auth.ts`).
+Next.js (App Router) + TypeScript, PostgreSQL דרך Prisma (עם driver adapter `@prisma/adapter-pg` — Prisma 7 דורש זאת במקום datasource URL ישיר), Auth.js עם Google OAuth (ראו `src/lib/auth.ts`).
 
 ## הרצה מקומית
 
@@ -13,25 +13,42 @@ PostgreSQL 17 מותקן מקומית (native, לא Docker — ראו `docker-co
 1. ודאו ששירות `postgresql-x64-17` רץ (`Get-Service postgresql-x64-17`).
 2. `npm install`
 3. `npm run db:migrate` — יוצר/מעדכן את הסכימה בפועל.
-4. `npm run db:seed` — נתוני דוגמה: מוסד אחד, 2 קבוצות, 3 חניכים, 3 משתמשי צוות (admin/lead/counselor@example.local, סיסמה לכולם: `dev-password`), תכנית שלבים עם 3 שלבים ו-3 פרמטרים.
-5. `npm run dev`
+4. `npm run db:seed` — נתוני דוגמה: מוסד אחד, 2 קבוצות, 3 חניכים, 3 משתמשי צוות (`DEV_ADMIN_EMAIL`, `DEV_LEAD_EMAIL`, `DEV_COUNSELOR_EMAIL` ב-`.env`, או admin/lead/counselor@example.local כברירת מחדל), תכנית שלבים עם 3 שלבים ו-3 פרמטרים.
+5. הגדירו Google OAuth ב-`.env`:
+   - `AUTH_SECRET` — ניתן ליצור עם `npx auth secret`.
+   - `AUTH_URL="http://localhost:3000"`.
+   - `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` מתוך Google Cloud OAuth Client.
+   - ב-Google Cloud יש להוסיף Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`.
+6. ודאו שהאימייל של חשבון Google שמתחבר קיים כ-`StaffUser.email` פעיל במערכת. בפיתוח מקומי אפשר להגדיר את `DEV_ADMIN_EMAIL` / `DEV_LEAD_EMAIL` / `DEV_COUNSELOR_EMAIL` לפני seed, או לעדכן את רשומות הצוות הקיימות.
+7. `npm run dev`
 
 ## מבנה תיקיות (`src/`)
 
 - `domain/` — טיפוסים/לוגיקה טהורה של תחום השלבים, ללא תלות ב-DB.
-- `services/` — לוגיקה עסקית: `permissions/resolvePermission.ts` (הרשאות), `stagePrograms/` (חישוב ציון, מיעוט נתונים, `fitReport.ts` — דוח התאמה קבוצתי/פרטני, המלצת עלייה/ירידה בשלב).
+- `services/` — לוגיקה עסקית: `permissions/` (בדיקת הרשאות וגבול כתיבה ל-overrides), `stagePrograms/` (חישוב ציון, מיעוט נתונים, `fitReport.ts` — דוח התאמה קבוצתי/פרטני, המלצת עלייה/ירידה בשלב), `audit/` (כתיבה append-only ל-Audit Log).
 - `repositories/` — גישה לנתונים דרך Prisma (institution/group/trainee/staffUser/stageProgram/scoreEntry) — שכבה דקה שהשירותים והעמודים קוראים לה, במקום לגשת ל-Prisma ישירות.
-- `audit/` — כתיבה ל-Audit Log — ייבנה בהמשך לפי הצורך.
 - `lib/` — Prisma client singleton, קונפיגורציית Auth.js.
 
 ## מסכים קיימים
 
 - `/` — מוסד + רשימת קבוצות.
-- `/login` — התחברות (Credentials זמני).
-- `/groups/[groupId]` — דוח התאמה קבוצתי (ברירת המחדל לפי האפיון): שלב נוכחי, ציון אחרון, אזהרת מיעוט נתונים. גישה דורשת סשן מחובר + הרשאת `VIEW_REPORTS` (נבדק דרך `resolvePermission`, כולל scope לקבוצה).
+- `/login` — התחברות עם Google. Google מאמת את הזהות, והאפליקציה מאשרת כניסה רק אם האימייל המאומת קיים כמשתמש צוות פעיל במערכת.
+- `/groups/[groupId]` — דוח התאמה קבוצתי (ברירת המחדל לפי האפיון): שלב נוכחי, ציון אחרון, אזהרת מיעוט נתונים. גישה דורשת סשן מחובר + הרשאת `VIEW_REPORTS` (נבדק דרך `resolvePermission`, כולל scope לקבוצה — הבעלות על הקבוצה/חניך מאומתת מול ה-DB בתוך `resolvePermission` עצמו, לא רק על ידי הקורא).
 - `/trainees/[traineeId]` — דוח פרטני עם פירוט לפי פרמטר (ליום האחרון) — נגיש רק בלחיצה על חניך, כפי שהאפיון דורש. השוואה לתקופות קודמות והמלצת שלב **אינן ממומשות** (ראו למטה).
 
-כל שכבות ההרשאה, החישוב וה-DB אומתו חיים (לא רק build): נבדק חיבור מחובר/לא מחובר, הרשאת VIEW_REPORTS שנדחית כברירת מחדל לתפקיד ללא הרשאה, וחישוב ציון + אזהרת מיעוט נתונים מול הנתונים שנזרעו.
+שכבות ההרשאה, החישוב וה-DB מכוסות בסוויטת האינטגרציה מול Postgres אמיתי (ראו "בדיקות" למטה) — לא רק unit tests טהורים. עמודי ה-Next/Auth הממומשים מכוסים גם בבדיקות page-level מהירות וגם בסוויטת Playwright מול שרת Next מקומי ללא Google אמיתי.
+
+## בדיקות
+
+- `npm test` — יוניט/page-level טסטים מהירים (`src/**/*.test.ts` ו-`src/**/*.test.tsx`), ללא תלות ב-DB. לא נוגע ב-Postgres בכלל.
+- `npm run test:integration` — סוויטת אינטגרציה מול **Postgres אמיתי**, לא mocks, ב-DB נפרד ומבודד לגמרי מ-`steps_dev` (כדי לא להסתמך על ה-seed ולא לסכן אותו):
+  1. חד-פעמי: `psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE steps_test OWNER steps;"`
+  2. `cp .env.test.example .env.test` (הערכים כבר תואמים למשתמש `steps` הקיים — אין צורך ביצירת role חדש).
+  3. `npm run test:integration` — מריץ `prisma migrate deploy` מול `steps_test` (idempotent, לא נוגע ב-`DATABASE_URL` הרגיל) ואז את הטסטים.
+  - כל קובץ טסט מרוקן (`TRUNCATE ... CASCADE`) את כל הטבלאות לפני שהוא מתחיל ובונה את הנתונים שלו בעצמו דרך `tests/integration/db.ts` — אין תלות בנתוני seed.
+  - `tests/integration/vitestSetup.ts` דורס את `DATABASE_URL` בזמן ריצה כדי ש-`@/lib/prisma` (וכל repository/service שמייבא אותו) ידבר עם `steps_test` באופן שקוף — כלומר הטסטים מפעילים את הקוד האמיתי (`resolvePermission`, `buildTraineeFitReport` וכו׳), לא re-implementation שלו. יש גם guard מפורש: אם `TEST_DATABASE_URL` שווה בטעות ל-`DATABASE_URL` הרגיל, הריצה נכשלת מיד במקום למחוק בטעות את `steps_dev`.
+  - מכסה: חסימת הרשאות בין מוסדות, override גובר על ברירת מחדל (allow/deny), גבול כתיבה בטוח ל-`UserPermissionOverride`, כתיבת Audit Log, backfill ל-NOT_SCORED לפרמטר בלי רשומה, החרגת NOT_APPLICABLE מהבסיס, ומיעוט נתונים מול נתונים אמיתיים מה-DB.
+- `npm run test:e2e` — בדיקות Playwright למסכי ה-Next/Auth הממומשים מול `steps_test`. הסוויטה מריצה את `scripts/test-db-migrate.mjs`, בונה את האפליקציה, מרימה `next start` על פורט 3100 עם `E2E_TEST_AUTH=1`, מזריעה נתוני בדיקה מבודדים דרך endpoint כבוי-כברירת-מחדל, ויוצרת cookie בדיקה של Auth.js שמוגבל ל-loopback. היא אינה משתמשת ב-Google אמיתי ואינה נוגעת ב-`steps_dev`.
 
 ## החלטות פתוחות שלא ננעלו בכוונה
 
@@ -42,3 +59,8 @@ PostgreSQL 17 מותקן מקומית (native, לא Docker — ראו `docker-co
 - השוואה לתקופות קודמות בדוח הפרטני לא מומשה (גם באפיון זה סומן כלא מאופיין לעומק).
 
 אין להניח החלטה בנקודות האלה לפני שהן נסגרות במוצר.
+
+## פערים ידועים (לא שאלות מוצר, אלא חוב טכני מתועד)
+
+- `UserPermissionOverride` לא אוכף ב-DB "בדיוק groupId או traineeId אחד" (התיאור בקוד הוא כוונה, לא אילוץ). נתיב השירות `upsertUserPermissionOverride()` כן מאמת scope ובעלות מוסד ומנקה כפילויות same-scope, אך CHECK/unique constraints ב-DB עדיין לא קיימים ודורשים תיאום migration נפרד.
+- ולידציית משקלי הפרמטרים (סכום 100%) קיימת כ-helper טהור, אבל עדיין לא נאכפת בנתיב כתיבה ממשי כי אין עדיין שירות create/update לתכניות שלבים.

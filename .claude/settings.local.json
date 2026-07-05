@@ -24,7 +24,8 @@
       "Bash(curl -s http://localhost:3000/groups/cmr69oa45000ppokrt4a9q6dw)",
       "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000)",
       "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000/groups/cmr69oa45000ppokrt4a9q6dw)",
-      "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000/trainees/cmr69oaf10018pokrwa0nvbhe)"
+      "Bash(curl -s -b /tmp/tmp.WIQ74V38Iz http://localhost:3000/trainees/cmr69oaf10018pokrwa0nvbhe)",
+      "PowerShell([System.TimeZoneInfo]::ConvertTime\\([DateTime]::UtcNow, [System.TimeZoneInfo]::FindSystemTimeZoneById\\(\"Israel Standard Time\"\\)\\).ToString\\(\"yyyy-MM-dd HH:mm:ss\"\\))"
     ],
     "additionalDirectories": [
       "C:\\Users\\Still\\Dropbox\\steps\\src\\app\\api\\auth",

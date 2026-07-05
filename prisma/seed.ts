@@ -1,6 +1,6 @@
-import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { startOfUtcDay, toDateOnly } from "../src/lib/dateOnly";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -44,14 +44,15 @@ async function main() {
     prisma.group.create({ data: { institutionId: institution.id, name: "קבוצה ב׳" } }),
   ]);
 
-  const passwordHash = await bcrypt.hash("dev-password", 10);
+  const adminEmail = process.env.DEV_ADMIN_EMAIL?.trim() || "admin@example.local";
+  const leadEmail = process.env.DEV_LEAD_EMAIL?.trim() || "lead@example.local";
+  const counselorEmail = process.env.DEV_COUNSELOR_EMAIL?.trim() || "counselor@example.local";
   const [admin, lead, counselor] = await Promise.all([
     prisma.staffUser.create({
       data: {
         institutionId: institution.id,
         name: "מנהלת פנימייה",
-        email: "admin@example.local",
-        passwordHash,
+        email: adminEmail,
         role: "ADMIN",
       },
     }),
@@ -59,8 +60,7 @@ async function main() {
       data: {
         institutionId: institution.id,
         name: "רכז קבוצה",
-        email: "lead@example.local",
-        passwordHash,
+        email: leadEmail,
         role: "LEAD_COORDINATOR",
       },
     }),
@@ -68,8 +68,7 @@ async function main() {
       data: {
         institutionId: institution.id,
         name: "מדריך צוות",
-        email: "counselor@example.local",
-        passwordHash,
+        email: counselorEmail,
         role: "COUNSELOR",
       },
     }),
@@ -184,8 +183,14 @@ async function main() {
 
   // A few days of example scoring for one trainee, covering SCORED, NOT_SCORED and
   // NOT_APPLICABLE so calculateStageScore() has real data to exercise.
-  const today = new Date();
-  const daysAgo = (n: number) => new Date(today.getTime() - n * 24 * 60 * 60 * 1000);
+  // measurementDate is a @db.Date column (timezone-less) — normalize to a UTC-midnight
+  // instant so it buckets consistently with how fitReport.ts reads it back (see
+  // src/lib/dateOnly.ts for why local Date math would be a latent bug here).
+  const today = startOfUtcDay(new Date());
+  // Wrapped in toDateOnly defensively (belt-and-suspenders with the repository's own
+  // normalization) so this stays correct even if `today` above is ever changed to a
+  // plain `new Date()` without the UTC floor.
+  const daysAgo = (n: number) => toDateOnly(new Date(today.getTime() - n * 24 * 60 * 60 * 1000));
 
   await prisma.scoreEntry.createMany({
     data: [

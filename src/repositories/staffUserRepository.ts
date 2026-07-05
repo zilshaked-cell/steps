@@ -4,6 +4,15 @@ export function getStaffUserByEmail(email: string) {
   return prisma.staffUser.findUnique({ where: { email } });
 }
 
+export function findActiveStaffUserByEmail(email: string) {
+  return prisma.staffUser.findFirst({
+    where: {
+      active: true,
+      email: { equals: email.trim(), mode: "insensitive" },
+    },
+  });
+}
+
 export function getStaffUserById(id: string) {
   return prisma.staffUser.findUnique({ where: { id } });
 }

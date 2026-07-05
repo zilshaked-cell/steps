@@ -7,13 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:integration": "node scripts/test-db-migrate.mjs && vitest run --config vitest.integration.config.ts",
+    "test:e2e": "node scripts/test-db-migrate.mjs && node scripts/e2e-build.mjs && playwright test",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "bcryptjs": "^3.0.3",
     "next": "16.2.10",
     "next-auth": "^5.0.0-beta.31",
     "pg": "^8.22.0",
@@ -23,7 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
+    "@playwright/test": "^1.51.1",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
@@ -32,7 +34,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tsx": "^4.23.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.9"
   },
   "allowScripts": {
     "@prisma/engines@7.8.0": true,

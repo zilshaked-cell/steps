@@ -1,0 +1,20 @@
+{
+  "name": "steps-local",
+  "interface": {
+    "displayName": "Steps Local"
+  },
+  "plugins": [
+    {
+      "name": "agent-peer-collaboration",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agent-peer-collaboration"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

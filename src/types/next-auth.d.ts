@@ -11,13 +11,14 @@ declare module "next-auth" {
   }
 
   interface User {
-    role: StaffRole;
-    institutionId: string;
+    role?: StaffRole;
+    institutionId?: string;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
+    staffUserId?: string;
     role?: StaffRole;
     institutionId?: string;
   }
@@ -25,6 +26,7 @@ declare module "next-auth/jwt" {
 
 declare module "@auth/core/jwt" {
   interface JWT {
+    staffUserId?: string;
     role?: StaffRole;
     institutionId?: string;
   }

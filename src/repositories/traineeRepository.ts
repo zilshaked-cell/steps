@@ -7,9 +7,9 @@ export function getTraineeById(id: string) {
   });
 }
 
-export function listTraineesByGroup(groupId: string) {
+export function listTraineesByGroup(groupId: string, institutionId?: string) {
   return prisma.trainee.findMany({
-    where: { groupId, active: true },
+    where: { groupId, active: true, ...(institutionId ? { institutionId } : {}) },
     include: { currentStage: true },
     orderBy: { lastName: "asc" },
   });

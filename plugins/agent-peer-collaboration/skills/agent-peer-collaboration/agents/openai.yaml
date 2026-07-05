@@ -1,0 +1,7 @@
+interface:
+  display_name: "Agent Peer Collaboration"
+  short_description: "Coordinate AI agents via a shared board"
+  default_prompt: "Use $agent-peer-collaboration as the Codex adapter for the vendor-neutral AGENT_CONVERSATION.md board shared by Codex, Claude, Gemini, Copilot Auto, and other coding agents."
+
+policy:
+  allow_implicit_invocation: true

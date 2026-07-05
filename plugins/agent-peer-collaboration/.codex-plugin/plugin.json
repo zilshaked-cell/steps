@@ -1,0 +1,32 @@
+{
+  "name": "agent-peer-collaboration",
+  "version": "0.1.1+codex.local-20260705-100359",
+  "description": "Vendor-neutral shared work-board protocol for coordinating multiple AI coding agents in a repository.",
+  "author": {
+    "name": "Steps Project"
+  },
+  "keywords": [
+    "agents",
+    "coordination",
+    "peer-review",
+    "handoff"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Peer Collaboration",
+    "shortDescription": "Coordinate coding agents via a shared board",
+    "longDescription": "Provides a Codex adapter for the reusable, vendor-neutral protocol used by AI coding agents such as Codex, Claude, Gemini, and Copilot Auto. Agents use AGENT_CONVERSATION.md to continue assigned work, review peers, prune stale notes, and leave useful handoff context without blocking each other unnecessarily.",
+    "developerName": "Steps Project",
+    "category": "Productivity",
+    "capabilities": [
+      "Write",
+      "Review"
+    ],
+    "defaultPrompt": [
+      "Use the shared agent board and continue assigned work.",
+      "Review peer notes and append useful handoff context.",
+      "Treat this plugin as the Codex adapter for a vendor-neutral protocol."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

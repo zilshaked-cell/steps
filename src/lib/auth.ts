@@ -1,52 +1,56 @@
 import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { getStaffUserByEmail } from "@/repositories/staffUserRepository";
+import Google from "next-auth/providers/google";
+import { findActiveStaffUserByEmail } from "@/repositories/staffUserRepository";
 
-// Temporary dev-only login: email + password checked against StaffUser.passwordHash.
-// Swap this provider for a real OIDC identity provider before any real deployment —
-// the rest of the app should only ever depend on `auth()`/session shape, not on
-// Credentials specifically, so that swap doesn't ripple outward.
+function profileEmail(profile: unknown): string | null {
+  if (!profile || typeof profile !== "object") return null;
+  const email = (profile as { email?: unknown }).email;
+  return typeof email === "string" && email.trim() ? email.trim() : null;
+}
+
+function isVerifiedGoogleProfile(profile: unknown): boolean {
+  if (!profile || typeof profile !== "object") return false;
+  const emailVerified = (profile as { email_verified?: unknown }).email_verified;
+  return emailVerified === true || emailVerified === "true";
+}
+
+// Google verifies identity; StaffUser remains the app's authorization source.
+// Only active staff rows whose email matches a verified Google profile can enter.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
+  pages: { signIn: "/login", error: "/login" },
   providers: [
-    Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      authorize: async (credentials) => {
-        const email = credentials?.email;
-        const password = credentials?.password;
-        if (typeof email !== "string" || typeof password !== "string") return null;
-
-        const user = await getStaffUserByEmail(email);
-        if (!user || !user.active || !user.passwordHash) return null;
-
-        const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-        if (!passwordMatches) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          institutionId: user.institutionId,
-        };
-      },
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
   ],
   callbacks: {
-    jwt: async ({ token, user }) => {
-      if (user) {
-        token.role = user.role;
-        token.institutionId = user.institutionId;
+    signIn: async ({ account, profile }) => {
+      if (account?.provider !== "google") return false;
+      const email = profileEmail(profile);
+      if (!email || !isVerifiedGoogleProfile(profile)) return false;
+
+      const staffUser = await findActiveStaffUserByEmail(email);
+      return Boolean(staffUser);
+    },
+    jwt: async ({ token, account, profile }) => {
+      const email = account?.provider === "google" ? profileEmail(profile) : token.email;
+      if (typeof email === "string") {
+        const staffUser = await findActiveStaffUserByEmail(email);
+        if (staffUser) {
+          token.staffUserId = staffUser.id;
+          token.name = staffUser.name;
+          token.email = staffUser.email;
+          token.role = staffUser.role;
+          token.institutionId = staffUser.institutionId;
+        }
       }
       return token;
     },
     session: async ({ session, token }) => {
-      if (session.user && token.role && token.institutionId) {
-        session.user.id = token.sub as string;
+      if (session.user && token.staffUserId && token.role && token.institutionId) {
+        session.user.id = token.staffUserId;
         session.user.role = token.role;
         session.user.institutionId = token.institutionId;
       }

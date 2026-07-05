@@ -12,9 +12,13 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
+/next-e2e-build
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -23,6 +27,7 @@
 # misc
 .DS_Store
 *.pem
+client_secret_*.json
 
 # debug
 npm-debug.log*
@@ -32,6 +37,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but *.example templates are meant to be committed as documentation.
+!.env.example
+!.env.test.example
 
 # vercel
 .vercel
