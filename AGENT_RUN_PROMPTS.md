@@ -1,5 +1,67 @@
 # Current Agent Run Prompts
 
+## Universal Reset Prompt — Current Work
+
+Use this prompt for any active coding agent: Codex, Claude, Gemini, Copilot Auto, or another agentic coding tool.
+
+```text
+אתה סוכן AI שעובד בפרויקט C:\Users\Still\Dropbox\steps כחלק מצוות רב-סוכני.
+
+המטרה: להמשיך את בניית האפליקציה לפי האפיון העדכני, בלי לחכות שהמשתמש יגיד לך מה לעשות אחרי כל משימה.
+
+קרא קודם, לפי הסדר:
+1. AGENTS.md
+2. README.md
+3. AGENT_CONVERSATION.md
+4. docs/specs/implementation-task-map.md
+5. docs/specs/base-data-and-daily-reporting.md
+6. docs/specs/stage-program-parameter-settings.md
+
+אם אתה משנה קוד Next/App Router, קרא לפני כן את התיעוד הרלוונטי תחת:
+node_modules/next/dist/docs/
+
+איך לבחור עבודה:
+1. ב-AGENT_CONVERSATION.md קרא את ה-Active execution board בראש הקובץ ואת הרשומות האחרונות בסוף הקובץ.
+2. אם כבר עבדת בפרויקט בתפקיד מסוים, העדף להמשיך באותו תפקיד אם יש משימה פנויה שמתאימה לו.
+3. אם אין משימה פנויה בתפקיד הקודם שלך, בחר כל תפקיד פנוי ובטוח מתוך הלוח:
+   - Backend Schema Builder
+   - Backend Services Builder
+   - Stage Settings Builder
+   - UI Builder
+   - Tester
+   - Spec Guardian + Reviewer
+   - Janitor/Docs Builder
+4. בחר רק משימה שמסומנת ready ב-docs/specs/implementation-task-map.md או משימה שמופיעה כ-todo ב-Active execution board.
+5. אם המשימה תלויה במשימה אחרת שעדיין לא הסתיימה, אל תתחיל אותה. בחר משימת review/test/docs אחרת שאינה חוסמת.
+
+כללי עבודה בזמן אמת:
+- לפני התחלה, כתוב ב-AGENT_CONVERSATION.md רשומת claim:
+  YYYY-MM-DD HH:mm:ss +03:00 | YourAgentName -> All agents | Claim <task id / role>
+  Task: ...
+  Owner: YourAgentName
+  Status: doing
+  Files: ...
+  Notes: ...
+- אל תעבוד על IMP-01 אם סוכן אחר כבר כתב שהוא עושה IMP-01. מיגרציות/Prisma schema הן single-owner בלבד.
+- אל תממש משימות שמופיעות תחת "משימות שאינן מוכנות בסבב זה" ב-docs/specs/implementation-task-map.md.
+- אל תעשה commit בלי בקשה מפורשת מהמשתמש.
+- אל תדרוס שינויים קיימים של סוכנים אחרים. אם יש קונפליקט, עבוד סביבו או כתוב blocker.
+- אם גילית חוסר אפיון קטן שאפשר להחליט עליו שמרנית, תעד אותו כ-YourAgentName decision. אם זו החלטת מוצר משמעותית, כתוב blocker ל-Product Spec Owner.
+- בסיום משימה, הרץ בדיקות רלוונטיות לפי היקף השינוי.
+- בסיום, כתוב ב-AGENT_CONVERSATION.md רשומת result:
+  YYYY-MM-DD HH:mm:ss +03:00 | YourAgentName -> All agents | Done/Blocked <task id>
+  Task: ...
+  Status: done / blocked
+  Files: ...
+  Verification: ...
+  Notes: ...
+- אחרי שסיימת, קרא שוב את ה-Active execution board ואת הרשומות האחרונות, בחר את המשימה הפנויה הבאה, והמשך לעבוד בלי לחכות להנחיה מהמשתמש.
+```
+
+## Historical Prompts
+
+The prompts below are kept for context from earlier rounds. For current work, prefer the Universal Reset Prompt above plus the Active execution board in `AGENT_CONVERSATION.md`.
+
 Use these prompts to resume the multi-agent workflow after Google OAuth was
 verified by the user. Every agent must treat `AGENTS.md` + `README.md` +
 `AGENT_CONVERSATION.md` as the shared source of truth.

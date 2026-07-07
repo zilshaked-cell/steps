@@ -22,14 +22,18 @@ model Institution {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  groups            Group[]
-  trainees          Trainee[]
-  staff             StaffUser[]
-  rolePermissions   RolePermission[]
-  userOverrides     UserPermissionOverride[]
-  stagePrograms     StageProgram[]
-  settingsChangeLog SettingsChangeLogEntry[]
-  auditLogEntries   AuditLogEntry[]
+  groups             Group[]
+  trainees           Trainee[]
+  staff              StaffUser[]
+  rolePermissions    RolePermission[]
+  userOverrides      UserPermissionOverride[]
+  stagePrograms      StageProgram[]
+  scoringProfiles    ScoringProfile[]
+  measurementReports MeasurementReport[]
+  vacations          VacationPeriod[]
+  groupMemberships   TraineeGroupMembershipHistory[]
+  settingsChangeLog  SettingsChangeLogEntry[]
+  auditLogEntries    AuditLogEntry[]
 }
 
 model Group {
@@ -37,13 +41,22 @@ model Group {
   institutionId String
   institution   Institution @relation(fields: [institutionId], references: [id])
   name          String
+  description   String?
+  active        Boolean     @default(true)
   createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @default(now()) @updatedAt
 
-  trainees         Trainee[]
-  staffAssignments GroupStaffAssignment[]
-  permissionScopes UserPermissionOverride[]
+  trainees              Trainee[]
+  staffAssignments      GroupStaffAssignment[]
+  permissionScopes      UserPermissionOverride[]
+  scoringProfiles       ScoringProfile[]
+  vacations             VacationPeriod[]
+  measurementReports    MeasurementReport[]
+  membershipHistoryFrom TraineeGroupMembershipHistory[] @relation("MembershipFromGroup")
+  membershipHistoryTo   TraineeGroupMembershipHistory[] @relation("MembershipToGroup")
 
   @@index([institutionId])
+  @@index([institutionId, active])
 }
 
 // Staff hierarchy, highest to lowest, per current spec:
@@ -74,12 +87,20 @@ model StaffUser {
   traineeId String?  @unique
   trainee   Trainee? @relation("TraineeLogin", fields: [traineeId], references: [id])
 
-  groupAssignments      GroupStaffAssignment[]
-  permissionOverrides   UserPermissionOverride[]
-  stageChangesPerformed StageChangeEvent[]       @relation("StageChangePerformedBy")
-  scoreEntriesRecorded  ScoreEntry[]             @relation("ScoreEntryRecordedBy")
-  settingsChangesMade   SettingsChangeLogEntry[] @relation("SettingsChangedBy")
-  auditLogEntries       AuditLogEntry[]
+  groupAssignments             GroupStaffAssignment[]
+  permissionOverrides          UserPermissionOverride[]
+  stageChangesPerformed        StageChangeEvent[]              @relation("StageChangePerformedBy")
+  scoreEntriesRecorded         ScoreEntry[]                    @relation("ScoreEntryRecordedBy")
+  measurementReportsRecorded   MeasurementReport[]             @relation("MeasurementReportRecordedBy")
+  measurementReportsPublished  MeasurementReport[]             @relation("MeasurementReportPublishedBy")
+  groupMovesPerformed          TraineeGroupMembershipHistory[] @relation("GroupMovePerformedBy")
+  stageProgramVersionsCreated  StageProgramVersion[]           @relation("StageProgramVersionCreatedBy")
+  stageProgramVersionsReplaced StageProgramVersion[]           @relation("StageProgramVersionReplacedBy")
+  scoringProfilesCreated       ScoringProfile[]                @relation("ScoringProfileCreatedBy")
+  scoringProfilesPublished     ScoringProfile[]                @relation("ScoringProfilePublishedBy")
+  vacationsCreated             VacationPeriod[]                @relation("VacationCreatedBy")
+  settingsChangesMade          SettingsChangeLogEntry[]        @relation("SettingsChangedBy")
+  auditLogEntries              AuditLogEntry[]
 
   @@index([institutionId])
 }
@@ -118,13 +139,17 @@ model Trainee {
   currentStageId String?
   currentStage   Stage?  @relation(fields: [currentStageId], references: [id])
 
-  loginAccount       StaffUser?                 @relation("TraineeLogin")
-  permissionScopes   UserPermissionOverride[]
-  scoreEntries       ScoreEntry[]
-  stageChangeEvents  StageChangeEvent[]
-  periodSnapshots    StagePeriodSnapshot[]
-  parameterOverrides TraineeParameterOverride[]
-  thresholdOverrides TraineeThresholdOverride[]
+  loginAccount           StaffUser?                      @relation("TraineeLogin")
+  permissionScopes       UserPermissionOverride[]
+  scoreEntries           ScoreEntry[]
+  measurementReports     MeasurementReport[]
+  stageChangeEvents      StageChangeEvent[]
+  periodSnapshots        StagePeriodSnapshot[]
+  parameterOverrides     TraineeParameterOverride[]
+  thresholdOverrides     TraineeThresholdOverride[]
+  groupMembershipHistory TraineeGroupMembershipHistory[]
+  scoringProfiles        ScoringProfile[]
+  vacations              VacationPeriod[]
 
   @@index([institutionId])
   @@index([groupId])
@@ -141,6 +166,15 @@ enum PermissionAction {
   VIEW_REPORTS
   EDIT_SETTINGS
   MANAGE_PERMISSIONS
+  MANAGE_GROUPS
+  MANAGE_TRAINEES
+  TRANSFER_TRAINEES
+  ENTER_REPORTS
+  EDIT_REPORTS
+  MANAGE_STAGE_SETTINGS
+  MANAGE_GROUP_SETTINGS
+  MANAGE_TRAINEE_SETTINGS
+  MANAGE_VACATIONS
 }
 
 enum PermissionEffect {
@@ -203,22 +237,35 @@ model StageProgram {
 }
 
 model StageProgramVersion {
-  id                      String       @id @default(cuid())
+  id                      String               @id @default(cuid())
   stageProgramId          String
-  stageProgram            StageProgram @relation(fields: [stageProgramId], references: [id])
+  stageProgram            StageProgram         @relation(fields: [stageProgramId], references: [id])
   versionNumber           Int
+  status                  ConfigurationStatus  @default(PUBLISHED)
   // Verbal description of the measurement method for this version (שיטת המדידה).
   measurementMethodNote   String?
   requiredMeasurementDays Int
-  effectiveFrom           DateTime     @default(now())
+  effectiveFrom           DateTime             @default(now())
+  effectiveTo             DateTime?
   createdById             String?
-  createdAt               DateTime     @default(now())
+  createdBy               StaffUser?           @relation("StageProgramVersionCreatedBy", fields: [createdById], references: [id])
+  replacedById            String?              @unique
+  replacedBy              StageProgramVersion? @relation("StageProgramVersionReplacement", fields: [replacedById], references: [id])
+  replaces                StageProgramVersion? @relation("StageProgramVersionReplacement")
+  replacedByUserId        String?
+  replacedByUser          StaffUser?           @relation("StageProgramVersionReplacedBy", fields: [replacedByUserId], references: [id])
+  replacedAt              DateTime?
+  publishedAt             DateTime?
+  createdAt               DateTime             @default(now())
 
-  stages     Stage[]
-  parameters ParameterDefinition[]
-  thresholds StageThreshold[]
+  stages             Stage[]
+  parameters         ParameterDefinition[]
+  thresholds         StageThreshold[]
+  scoringProfiles    ScoringProfile[]
+  measurementReports MeasurementReport[]
 
   @@unique([stageProgramId, versionNumber])
+  @@index([stageProgramId, status, effectiveFrom])
 }
 
 model Stage {
@@ -232,12 +279,13 @@ model Stage {
   // Free-form list; the system ships with no predefined set — authorized users add/remove entries.
   provisions StageProvision[]
 
-  traineesCurrentlyHere Trainee[]
-  thresholdsFrom        StageThreshold[]           @relation("ThresholdFromStage")
-  parameterOverrides    TraineeParameterOverride[]
-  thresholdOverrides    TraineeThresholdOverride[]
-  periodSnapshots       StagePeriodSnapshot[]
-  changeEventsTo        StageChangeEvent[]
+  traineesCurrentlyHere    Trainee[]
+  thresholdsFrom           StageThreshold[]           @relation("ThresholdFromStage")
+  parameterOverrides       TraineeParameterOverride[]
+  thresholdOverrides       TraineeThresholdOverride[]
+  scoringProfileParameters ScoringProfileParameter[]
+  periodSnapshots          StagePeriodSnapshot[]
+  changeEventsTo           StageChangeEvent[]
 
   @@unique([stageProgramVersionId, order])
 }
@@ -256,20 +304,30 @@ model StageProvision {
 // exists for future write paths, but no stage-program create/update service exists
 // today; only seed/tests write these rows.
 model ParameterDefinition {
-  id                    String              @id @default(cuid())
-  stageProgramVersionId String
-  stageProgramVersion   StageProgramVersion @relation(fields: [stageProgramVersionId], references: [id])
+  id                           String                @id @default(cuid())
+  stageProgramVersionId        String
+  stageProgramVersion          StageProgramVersion   @relation(fields: [stageProgramVersionId], references: [id])
   // Null = applies to all stages in this version; set = this stage only.
   // (Spec allows parameters/thresholds to differ per stage.)
-  stageId               String?
-  name                  String
-  verbalDefinition      String?
-  weightPercent         Decimal             @db.Decimal(5, 2)
+  stageId                      String?
+  name                         String
+  verbalDefinition             String?
+  scoreScale                   ScoreScale            @default(ONE_TO_TEN)
+  weightPercent                Decimal               @db.Decimal(5, 2)
+  active                       Boolean               @default(true)
+  displayOrder                 Int?
+  deactivatedAt                DateTime?
+  basedOnParameterDefinitionId String?
+  basedOnParameterDefinition   ParameterDefinition?  @relation("ParameterDefinitionLineage", fields: [basedOnParameterDefinitionId], references: [id])
+  derivedParameterDefinitions  ParameterDefinition[] @relation("ParameterDefinitionLineage")
 
-  scoreEntries     ScoreEntry[]
-  traineeOverrides TraineeParameterOverride[]
+  scoreEntries             ScoreEntry[]
+  traineeOverrides         TraineeParameterOverride[]
+  scoringProfileParameters ScoringProfileParameter[]
 
   @@index([stageProgramVersionId])
+  @@index([stageProgramVersionId, active])
+  @@index([basedOnParameterDefinitionId])
 }
 
 // Recommendation thresholds for a stage-program version (X/Y/Z from the spec).
@@ -325,22 +383,185 @@ enum ParameterEntryStatus {
   NOT_APPLICABLE
 }
 
-model ScoreEntry {
+enum ScoreScale {
+  ONE_TO_THREE
+  ONE_TO_TEN
+  ONE_TO_ONE_HUNDRED
+}
+
+enum ConfigurationStatus {
+  DRAFT
+  PUBLISHED
+  REPLACED
+}
+
+enum ReportStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model ScoringProfile {
   id                    String               @id @default(cuid())
+  institutionId         String
+  institution           Institution          @relation(fields: [institutionId], references: [id])
+  groupId               String?
+  group                 Group?               @relation(fields: [groupId], references: [id])
+  traineeId             String?
+  trainee               Trainee?             @relation(fields: [traineeId], references: [id])
+  stageProgramVersionId String?
+  stageProgramVersion   StageProgramVersion? @relation(fields: [stageProgramVersionId], references: [id])
+  name                  String?
+  status                ConfigurationStatus  @default(DRAFT)
+  effectiveFrom         DateTime?
+  effectiveTo           DateTime?
+  createdById           String?
+  createdBy             StaffUser?           @relation("ScoringProfileCreatedBy", fields: [createdById], references: [id])
+  publishedById         String?
+  publishedBy           StaffUser?           @relation("ScoringProfilePublishedBy", fields: [publishedById], references: [id])
+  publishedAt           DateTime?
+  replacedById          String?              @unique
+  replacedBy            ScoringProfile?      @relation("ScoringProfileReplacement", fields: [replacedById], references: [id])
+  replaces              ScoringProfile?      @relation("ScoringProfileReplacement")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  parameters         ScoringProfileParameter[]
+  measurementReports MeasurementReport[]
+
+  @@index([institutionId, status, effectiveFrom])
+  @@index([groupId])
+  @@index([traineeId])
+  @@index([stageProgramVersionId])
+}
+
+model ScoringProfileParameter {
+  id                          String               @id @default(cuid())
+  scoringProfileId            String
+  scoringProfile              ScoringProfile       @relation(fields: [scoringProfileId], references: [id])
+  sourceParameterDefinitionId String?
+  sourceParameterDefinition   ParameterDefinition? @relation(fields: [sourceParameterDefinitionId], references: [id])
+  stageId                     String?
+  stage                       Stage?               @relation(fields: [stageId], references: [id])
+  name                        String?
+  verbalDefinition            String?
+  scoreScale                  ScoreScale?
+  weightPercent               Decimal?             @db.Decimal(5, 2)
+  active                      Boolean              @default(true)
+  displayOrder                Int?
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+
+  scoreEntries ScoreEntry[]
+
+  @@unique([scoringProfileId, sourceParameterDefinitionId])
+  @@index([scoringProfileId, active])
+  @@index([sourceParameterDefinitionId])
+  @@index([stageId])
+}
+
+model MeasurementReport {
+  id                    String               @id @default(cuid())
+  institutionId         String
+  institution           Institution          @relation(fields: [institutionId], references: [id])
   traineeId             String
   trainee               Trainee              @relation(fields: [traineeId], references: [id])
-  parameterDefinitionId String
-  parameterDefinition   ParameterDefinition  @relation(fields: [parameterDefinitionId], references: [id])
+  groupId               String?
+  group                 Group?               @relation(fields: [groupId], references: [id])
   measurementDate       DateTime             @db.Date
-  status                ParameterEntryStatus
-  // 1–10, required only when status = SCORED.
-  rawScore              Int?
+  status                ReportStatus         @default(DRAFT)
+  note                  String?
+  isVacationOverride    Boolean              @default(false)
+  stageProgramVersionId String?
+  stageProgramVersion   StageProgramVersion? @relation(fields: [stageProgramVersionId], references: [id])
+  scoringProfileId      String?
+  scoringProfile        ScoringProfile?      @relation(fields: [scoringProfileId], references: [id])
   recordedById          String
-  recordedBy            StaffUser            @relation("ScoreEntryRecordedBy", fields: [recordedById], references: [id])
+  recordedBy            StaffUser            @relation("MeasurementReportRecordedBy", fields: [recordedById], references: [id])
+  publishedById         String?
+  publishedBy           StaffUser?           @relation("MeasurementReportPublishedBy", fields: [publishedById], references: [id])
+  publishedAt           DateTime?
   createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  scoreEntries ScoreEntry[]
+
+  @@unique([traineeId, measurementDate])
+  @@index([institutionId, measurementDate])
+  @@index([groupId, measurementDate])
+  @@index([status])
+  @@index([stageProgramVersionId])
+  @@index([scoringProfileId])
+}
+
+model ScoreEntry {
+  id                        String                   @id @default(cuid())
+  traineeId                 String
+  trainee                   Trainee                  @relation(fields: [traineeId], references: [id])
+  parameterDefinitionId     String?
+  parameterDefinition       ParameterDefinition?     @relation(fields: [parameterDefinitionId], references: [id])
+  scoringProfileParameterId String?
+  scoringProfileParameter   ScoringProfileParameter? @relation(fields: [scoringProfileParameterId], references: [id])
+  measurementReportId       String?
+  measurementReport         MeasurementReport?       @relation(fields: [measurementReportId], references: [id])
+  measurementDate           DateTime                 @db.Date
+  status                    ParameterEntryStatus
+  // Required only when status = SCORED. Validate against the parameter's ScoreScale.
+  rawScore                  Int?
+  recordedById              String
+  recordedBy                StaffUser                @relation("ScoreEntryRecordedBy", fields: [recordedById], references: [id])
+  createdAt                 DateTime                 @default(now())
 
   @@unique([traineeId, parameterDefinitionId, measurementDate])
+  @@unique([traineeId, scoringProfileParameterId, measurementDate])
+  @@unique([measurementReportId, parameterDefinitionId])
+  @@unique([measurementReportId, scoringProfileParameterId])
   @@index([traineeId, measurementDate])
+  @@index([measurementReportId])
+  @@index([scoringProfileParameterId])
+}
+
+model VacationPeriod {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  groupId       String?
+  group         Group?      @relation(fields: [groupId], references: [id])
+  traineeId     String?
+  trainee       Trainee?    @relation(fields: [traineeId], references: [id])
+  title         String
+  note          String?
+  startsOn      DateTime    @db.Date
+  endsOn        DateTime    @db.Date
+  createdById   String?
+  createdBy     StaffUser?  @relation("VacationCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId, startsOn, endsOn])
+  @@index([groupId, startsOn, endsOn])
+  @@index([traineeId, startsOn, endsOn])
+}
+
+model TraineeGroupMembershipHistory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  traineeId     String
+  trainee       Trainee     @relation(fields: [traineeId], references: [id])
+  fromGroupId   String?
+  fromGroup     Group?      @relation("MembershipFromGroup", fields: [fromGroupId], references: [id])
+  toGroupId     String?
+  toGroup       Group?      @relation("MembershipToGroup", fields: [toGroupId], references: [id])
+  effectiveFrom DateTime    @db.Date
+  movedById     String
+  movedBy       StaffUser   @relation("GroupMovePerformedBy", fields: [movedById], references: [id])
+  note          String?
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, effectiveFrom])
+  @@index([traineeId, effectiveFrom])
+  @@index([fromGroupId])
+  @@index([toGroupId])
 }
 
 enum StageRecommendation {

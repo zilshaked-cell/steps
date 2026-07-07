@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import type { AuditLogEntry, Prisma } from "@/generated/prisma/client";
 
+type AuditLogDbClient = Pick<
+  Prisma.TransactionClient,
+  "institution" | "staffUser" | "auditLogEntry"
+>;
+
 export type AuditLogValidationCode =
   | "INVALID_ACTION"
   | "INSTITUTION_NOT_FOUND"
@@ -38,10 +43,11 @@ function normalizeAction(action: string): string {
 
 export async function appendAuditLogEntry(
   input: AppendAuditLogEntryInput,
+  db: AuditLogDbClient = prisma,
 ): Promise<AuditLogEntry> {
   const action = normalizeAction(input.action);
 
-  const institution = await prisma.institution.findUnique({
+  const institution = await db.institution.findUnique({
     where: { id: input.institutionId },
     select: { id: true },
   });
@@ -50,7 +56,7 @@ export async function appendAuditLogEntry(
   }
 
   if (input.actorId) {
-    const actor = await prisma.staffUser.findUnique({
+    const actor = await db.staffUser.findUnique({
       where: { id: input.actorId },
       select: { institutionId: true },
     });
@@ -62,7 +68,7 @@ export async function appendAuditLogEntry(
     }
   }
 
-  return prisma.auditLogEntry.create({
+  return db.auditLogEntry.create({
     data: {
       institutionId: input.institutionId,
       actorId: input.actorId ?? null,

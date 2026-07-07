@@ -4,8 +4,24 @@ import type { ParameterEntryStatus } from "@/generated/prisma/enums";
 
 export function listScoreEntriesForTraineeInRange(traineeId: string, from: Date, to: Date) {
   return prisma.scoreEntry.findMany({
-    where: { traineeId, measurementDate: { gte: from, lte: to } },
-    include: { parameterDefinition: true },
+    where: {
+      traineeId,
+      measurementDate: { gte: from, lte: to },
+      OR: [{ measurementReportId: null }, { measurementReport: { status: "PUBLISHED" } }],
+    },
+    include: {
+      parameterDefinition: true,
+      scoringProfileParameter: { include: { sourceParameterDefinition: true } },
+      measurementReport: {
+        include: {
+          scoringProfile: {
+            include: {
+              parameters: { include: { sourceParameterDefinition: true } },
+            },
+          },
+        },
+      },
+    },
     orderBy: { measurementDate: "asc" },
   });
 }

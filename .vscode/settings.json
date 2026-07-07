@@ -1,0 +1,24 @@
+{
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/.next/**": true,
+    "**/.next-e2e/**": true,
+    "**/coverage/**": true,
+    "**/next-e2e-build/**": true,
+    "**/node_modules/**": true,
+    "**/playwright-report/**": true,
+    "**/src/generated/prisma/**": true,
+    "**/test-results/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/.next-e2e": true,
+    "**/coverage": true,
+    "**/next-e2e-build": true,
+    "**/node_modules": true,
+    "**/playwright-report": true,
+    "**/src/generated/prisma": true,
+    "**/test-results": true
+  },
+  "typescript.tsserver.maxTsServerMemory": 4096
+}

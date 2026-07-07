@@ -5,11 +5,19 @@ import { config } from "dotenv";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+config();
 config({ path: ".env.test" });
 
 if (!process.env.TEST_DATABASE_URL) {
   console.error(
     "TEST_DATABASE_URL is not set. Copy .env.test.example to .env.test and fill it in.",
+  );
+  process.exit(1);
+}
+
+if (process.env.DATABASE_URL && process.env.TEST_DATABASE_URL === process.env.DATABASE_URL) {
+  console.error(
+    "Refusing to migrate: TEST_DATABASE_URL must not match DATABASE_URL.",
   );
   process.exit(1);
 }

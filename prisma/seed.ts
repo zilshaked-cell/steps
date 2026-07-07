@@ -1,18 +1,14 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { startOfUtcDay, toDateOnly } from "../src/lib/dateOnly";
+import {
+  ALL_PERMISSION_ACTIONS,
+  STAFF_ROLES,
+  isRolePermissionAllowedByDefault,
+} from "../src/services/permissions/actions";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
-
-const ACTIONS = [
-  "VIEW",
-  "EDIT",
-  "CHANGE_STAGE",
-  "VIEW_REPORTS",
-  "EDIT_SETTINGS",
-  "MANAGE_PERMISSIONS",
-] as const;
 
 async function main() {
   const institution = await prisma.institution.create({
@@ -21,20 +17,12 @@ async function main() {
 
   // Default posture per spec: only ADMIN holds permissions until an admin grants more.
   await prisma.rolePermission.createMany({
-    data: ACTIONS.map((action) => ({
-      institutionId: institution.id,
-      role: "ADMIN" as const,
-      action,
-      allowed: true,
-    })),
-  });
-  await prisma.rolePermission.createMany({
-    data: (["LEAD_COORDINATOR", "COUNSELOR", "YOUTH_WORKER"] as const).flatMap((role) =>
-      ACTIONS.map((action) => ({
+    data: STAFF_ROLES.flatMap((role) =>
+      ALL_PERMISSION_ACTIONS.map((action) => ({
         institutionId: institution.id,
         role,
         action,
-        allowed: false,
+        allowed: isRolePermissionAllowedByDefault(role),
       })),
     ),
   });
@@ -191,6 +179,35 @@ async function main() {
   // normalization) so this stays correct even if `today` above is ever changed to a
   // plain `new Date()` without the UTC floor.
   const daysAgo = (n: number) => toDateOnly(new Date(today.getTime() - n * 24 * 60 * 60 * 1000));
+
+  await prisma.traineeGroupMembershipHistory.createMany({
+    data: [
+      {
+        institutionId: institution.id,
+        traineeId: traineeStandard.id,
+        toGroupId: groupA.id,
+        effectiveFrom: daysAgo(30),
+        movedById: admin.id,
+        note: "שיוך התחלתי מנתוני seed",
+      },
+      {
+        institutionId: institution.id,
+        traineeId: traineeCustom.id,
+        toGroupId: groupA.id,
+        effectiveFrom: daysAgo(30),
+        movedById: admin.id,
+        note: "שיוך התחלתי מנתוני seed",
+      },
+      {
+        institutionId: institution.id,
+        traineeId: traineeOtherGroup.id,
+        toGroupId: groupB.id,
+        effectiveFrom: daysAgo(30),
+        movedById: admin.id,
+        note: "שיוך התחלתי מנתוני seed",
+      },
+    ],
+  });
 
   await prisma.scoreEntry.createMany({
     data: [

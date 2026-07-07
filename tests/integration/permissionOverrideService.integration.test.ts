@@ -18,6 +18,29 @@ beforeEach(async () => {
 });
 
 describe("upsertUserPermissionOverride (real Postgres)", () => {
+  it("creates a scoped override for a new write action", async () => {
+    const institution = await createInstitution();
+    const staff = await createStaffUser({ institutionId: institution.id });
+    const group = await createGroup(institution.id);
+
+    const override = await upsertUserPermissionOverride({
+      institutionId: institution.id,
+      staffId: staff.id,
+      action: "MANAGE_GROUP_SETTINGS",
+      effect: "ALLOW",
+      groupId: group.id,
+    });
+
+    expect(override).toMatchObject({
+      institutionId: institution.id,
+      staffId: staff.id,
+      action: "MANAGE_GROUP_SETTINGS",
+      effect: "ALLOW",
+      groupId: group.id,
+      traineeId: null,
+    });
+  });
+
   it("creates an institution-wide override for a staff user in the same institution", async () => {
     const institution = await createInstitution();
     const staff = await createStaffUser({ institutionId: institution.id });

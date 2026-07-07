@@ -1,10 +1,7 @@
-// Builds the production app for Playwright. In Next 16, `next dev` writes to
-// `.next/dev`, so a production build in `.next` can coexist with a running dev
-// server on another port.
+// Builds a clean production app for Playwright.
 import { config } from "dotenv";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, open, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,42 +21,82 @@ const e2eDistDir = "next-e2e-build";
 const e2eBuildLockPath = fileURLToPath(
   new URL("../test-results/e2e-build.lock", import.meta.url),
 );
-const nextBuildLockPath = fileURLToPath(new URL(`../${e2eDistDir}/lock`, import.meta.url));
+const nextBuildPath = fileURLToPath(new URL(`../${e2eDistDir}`, import.meta.url));
+const nextDevTypesPath = fileURLToPath(new URL("../.next/dev/types", import.meta.url));
+let e2eBuildLockAcquired = false;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitUntil(description, isReady) {
-  const startedAt = Date.now();
-  const timeoutMs = Number(process.env.E2E_BUILD_LOCK_TIMEOUT_MS ?? 180_000);
-
-  while (!isReady()) {
-    if (Date.now() - startedAt > timeoutMs) {
-      throw new Error(`Timed out waiting for ${description}.`);
-    }
-    await sleep(1_000);
-  }
-}
-
 async function acquireE2eBuildLock() {
   await mkdir(dirname(e2eBuildLockPath), { recursive: true });
+  const startedAt = Date.now();
+  const timeoutMs = Number(process.env.E2E_BUILD_LOCK_TIMEOUT_MS ?? 180_000);
 
   while (true) {
     try {
       const handle = await open(e2eBuildLockPath, "wx");
+      await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
       await handle.close();
       return;
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
-      await waitUntil("another e2e build wrapper to finish", () => !existsSync(e2eBuildLockPath));
+      const removedStaleLock = await removeStaleE2eBuildLock();
+      if (!removedStaleLock) {
+        if (Date.now() - startedAt > timeoutMs) {
+          throw new Error("Timed out waiting for another e2e build wrapper to finish.");
+        }
+        await sleep(1_000);
+      }
+    }
+  }
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function removeStaleE2eBuildLock() {
+  try {
+    const raw = await readFile(e2eBuildLockPath, "utf8");
+    const owner = JSON.parse(raw);
+    if (isProcessAlive(owner.pid)) return false;
+  } catch {
+    // Empty or malformed wrapper lock files are leftovers from interrupted runs.
+  }
+
+  await rm(e2eBuildLockPath, { force: true });
+  return true;
+}
+
+async function rmWithRetry(path, options) {
+  const attempts = Number(process.env.E2E_RM_ATTEMPTS ?? 8);
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await rm(path, options);
+      return;
+    } catch (error) {
+      if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(error?.code) || attempt === attempts) {
+        throw error;
+      }
+      await sleep(500 * attempt);
     }
   }
 }
 
 try {
   await acquireE2eBuildLock();
-  await waitUntil("the active Next build lock to clear", () => !existsSync(nextBuildLockPath));
+  e2eBuildLockAcquired = true;
+  await rmWithRetry(nextBuildPath, { recursive: true, force: true });
+  await rmWithRetry(nextDevTypesPath, { recursive: true, force: true });
 
   const result = spawnSync(process.execPath, [nextCli, "build"], {
     stdio: "inherit",
@@ -83,5 +120,7 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  await rm(e2eBuildLockPath, { force: true });
+  if (e2eBuildLockAcquired) {
+    await rm(e2eBuildLockPath, { force: true });
+  }
 }

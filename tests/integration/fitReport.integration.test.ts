@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildTraineeFitReport, buildGroupFitReport } from "@/services/stagePrograms/fitReport";
 import { toDateOnly } from "@/lib/dateOnly";
+import { ensureDefaultRolePermissions } from "@/services/permissions/rolePermissionDefaults";
+import { publishTraineeReport } from "@/services/reports/reportService";
+import {
+  publishGroupScoringProfile,
+  saveGroupScoringProfileDraft,
+} from "@/services/stagePrograms/stageSettingsService";
 import {
   resetDatabase,
   createInstitution,
@@ -14,6 +20,16 @@ import {
 beforeEach(async () => {
   await resetDatabase();
 });
+
+function today(): Date {
+  return new Date();
+}
+
+function daysFromNow(days: number): Date {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date;
+}
 
 describe("fitReport (real Postgres)", () => {
   it("backfills a parameter with no ScoreEntry row that day as NOT_SCORED, not excluded", async () => {
@@ -113,6 +129,118 @@ describe("fitReport (real Postgres)", () => {
       parametersIncluded: 1,
       parametersExpected: 1,
       isSufficient: false,
+    });
+  });
+
+  it("falls back to source weights for inherited local scoring-profile parameters", async () => {
+    const institution = await createInstitution();
+    const admin = await createStaffUser({ institutionId: institution.id, role: "ADMIN" });
+    const group = await createGroup(institution.id);
+    const trainee = await createTrainee({ institutionId: institution.id, groupId: group.id });
+    const { version, parameters } = await createStageProgramVersion({
+      institutionId: institution.id,
+      parameterWeights: [100],
+    });
+    await ensureDefaultRolePermissions(institution.id);
+    const actor = { id: admin.id, institutionId: institution.id, role: "ADMIN" as const };
+
+    const draft = await saveGroupScoringProfileDraft({
+      actor,
+      institutionId: institution.id,
+      groupId: group.id,
+      stageProgramVersionId: version.id,
+      parameters: [
+        {
+          sourceParameterDefinitionId: parameters[0].id,
+          weightPercent: null,
+        },
+      ],
+    });
+    const profile = await publishGroupScoringProfile({
+      actor,
+      institutionId: institution.id,
+      groupId: group.id,
+      profileId: draft.id,
+      effectiveFrom: daysFromNow(-1),
+    });
+
+    await publishTraineeReport({
+      actor,
+      institutionId: institution.id,
+      traineeId: trainee.id,
+      measurementDate: today(),
+      entries: [
+        {
+          scoringProfileParameterId: profile.parameters[0].id,
+          status: "SCORED",
+          rawScore: 5,
+        },
+      ],
+    });
+
+    const report = await buildTraineeFitReport(trainee.id, institution.id);
+    const latestDay = report!.dailyScores.at(-1)!;
+
+    expect(latestDay.parameterDetails[0]).toMatchObject({
+      parameterDefinitionId: parameters[0].id,
+      scoringProfileParameterId: profile.parameters[0].id,
+      weightPercent: 100,
+    });
+    expect(latestDay.totalScore).toBeCloseTo(50);
+  });
+
+  it("uses profile-backed parameter counts for data sufficiency warnings", async () => {
+    const institution = await createInstitution();
+    const admin = await createStaffUser({ institutionId: institution.id, role: "ADMIN" });
+    const group = await createGroup(institution.id);
+    const trainee = await createTrainee({ institutionId: institution.id, groupId: group.id });
+    const { version, parameters } = await createStageProgramVersion({
+      institutionId: institution.id,
+      requiredMeasurementDays: 14,
+      parameterWeights: [50, 50],
+    });
+    await ensureDefaultRolePermissions(institution.id);
+    const actor = { id: admin.id, institutionId: institution.id, role: "ADMIN" as const };
+
+    const draft = await saveGroupScoringProfileDraft({
+      actor,
+      institutionId: institution.id,
+      groupId: group.id,
+      stageProgramVersionId: version.id,
+      parameters: [
+        {
+          sourceParameterDefinitionId: parameters[0].id,
+          weightPercent: 100,
+        },
+      ],
+    });
+    const profile = await publishGroupScoringProfile({
+      actor,
+      institutionId: institution.id,
+      groupId: group.id,
+      profileId: draft.id,
+      effectiveFrom: daysFromNow(-1),
+    });
+
+    await publishTraineeReport({
+      actor,
+      institutionId: institution.id,
+      traineeId: trainee.id,
+      measurementDate: today(),
+      entries: [
+        {
+          scoringProfileParameterId: profile.parameters[0].id,
+          status: "SCORED",
+          rawScore: 10,
+        },
+      ],
+    });
+
+    const report = await buildTraineeFitReport(trainee.id, institution.id);
+
+    expect(report!.dataSufficiency).toMatchObject({
+      parametersIncluded: 1,
+      parametersExpected: 1,
     });
   });
 

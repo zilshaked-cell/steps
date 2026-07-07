@@ -23,6 +23,19 @@ describe("calculateStageScore", () => {
     expect(result.includedWeightPercent).toBe(100);
   });
 
+  it("uses caller-provided maxRawScore for non-10 score scales", () => {
+    const result = calculateStageScore([
+      { weightPercent: 50, status: "SCORED", rawScore: 3, maxRawScore: 3 },
+      { weightPercent: 50, status: "SCORED", rawScore: 50, maxRawScore: 100 },
+    ]);
+    // 50*3/3 + 50*50/100 = 50 + 25 = 75
+    expect(result.totalScore).toBeCloseTo(75);
+
+    expect(() =>
+      calculateStageScore([{ weightPercent: 100, status: "SCORED", rawScore: 4, maxRawScore: 3 }]),
+    ).toThrow("rawScore must be between 1 and 3");
+  });
+
   it("removes NOT_APPLICABLE parameters from the 100% base instead of penalizing", () => {
     const result = calculateStageScore([
       { weightPercent: 40, status: "SCORED", rawScore: 8 },

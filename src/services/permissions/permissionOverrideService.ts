@@ -2,6 +2,11 @@ import { prisma } from "@/lib/prisma";
 import type { PermissionAction, PermissionEffect } from "@/generated/prisma/enums";
 import type { Prisma, UserPermissionOverride } from "@/generated/prisma/client";
 
+type PermissionOverrideDbClient = Pick<
+  Prisma.TransactionClient,
+  "staffUser" | "group" | "trainee" | "userPermissionOverride"
+>;
+
 export type PermissionOverrideValidationCode =
   | "MALFORMED_SCOPE"
   | "STAFF_OUT_OF_SCOPE"
@@ -39,12 +44,15 @@ function sameScopeWhere(
   return { groupId: null, traineeId: null };
 }
 
-async function assertPermissionOverrideScope(input: UpsertUserPermissionOverrideInput) {
+async function assertPermissionOverrideScope(
+  input: UpsertUserPermissionOverrideInput,
+  db: PermissionOverrideDbClient,
+) {
   if (input.groupId && input.traineeId) {
     fail("MALFORMED_SCOPE", "Permission override scope cannot include both groupId and traineeId.");
   }
 
-  const staff = await prisma.staffUser.findUnique({
+  const staff = await db.staffUser.findUnique({
     where: { id: input.staffId },
     select: { institutionId: true },
   });
@@ -53,7 +61,7 @@ async function assertPermissionOverrideScope(input: UpsertUserPermissionOverride
   }
 
   if (input.groupId) {
-    const group = await prisma.group.findUnique({
+    const group = await db.group.findUnique({
       where: { id: input.groupId },
       select: { institutionId: true },
     });
@@ -63,7 +71,7 @@ async function assertPermissionOverrideScope(input: UpsertUserPermissionOverride
   }
 
   if (input.traineeId) {
-    const trainee = await prisma.trainee.findUnique({
+    const trainee = await db.trainee.findUnique({
       where: { id: input.traineeId },
       select: { institutionId: true },
     });
@@ -75,9 +83,8 @@ async function assertPermissionOverrideScope(input: UpsertUserPermissionOverride
 
 export async function upsertUserPermissionOverride(
   input: UpsertUserPermissionOverrideInput,
+  db?: PermissionOverrideDbClient,
 ): Promise<UserPermissionOverride> {
-  await assertPermissionOverrideScope(input);
-
   const scopeWhere = sameScopeWhere(input);
   const where = {
     institutionId: input.institutionId,
@@ -86,7 +93,9 @@ export async function upsertUserPermissionOverride(
     ...scopeWhere,
   };
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: PermissionOverrideDbClient) => {
+    await assertPermissionOverrideScope(input, tx);
+
     const matching = await tx.userPermissionOverride.findMany({
       where,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -116,5 +125,7 @@ export async function upsertUserPermissionOverride(
       where: { id: primary.id },
       data: { effect: input.effect },
     });
-  });
+  };
+
+  return db ? run(db) : prisma.$transaction(run);
 }

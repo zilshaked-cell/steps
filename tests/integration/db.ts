@@ -13,6 +13,7 @@ import type {
   PermissionAction,
   PermissionEffect,
   ParameterEntryStatus,
+  ScoreScale,
 } from "@/generated/prisma/enums";
 
 export { prisma as testPrisma };
@@ -23,6 +24,11 @@ const TABLES_IN_TRUNCATE_ORDER = [
   "StageChangeEvent",
   "StagePeriodSnapshot",
   "ScoreEntry",
+  "MeasurementReport",
+  "ScoringProfileParameter",
+  "ScoringProfile",
+  "VacationPeriod",
+  "TraineeGroupMembershipHistory",
   "TraineeThresholdOverride",
   "TraineeParameterOverride",
   "StageThreshold",
@@ -116,6 +122,7 @@ export async function createStageProgramVersion(params: {
   institutionId: string;
   requiredMeasurementDays?: number;
   parameterWeights?: number[];
+  parameterScoreScales?: ScoreScale[];
 }) {
   const program = await prisma.stageProgram.create({
     data: { institutionId: params.institutionId, name: unique("Program") },
@@ -140,6 +147,7 @@ export async function createStageProgramVersion(params: {
           stageProgramVersionId: version.id,
           name: `Parameter ${index + 1}`,
           weightPercent,
+          scoreScale: params.parameterScoreScales?.[index] ?? "ONE_TO_TEN",
         },
       }),
     );

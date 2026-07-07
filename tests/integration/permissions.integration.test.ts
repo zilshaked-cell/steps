@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { resolvePermission } from "@/services/permissions/resolvePermission";
+import {
+  resolvePermission,
+  type PermissionScope,
+} from "@/services/permissions/resolvePermission";
+import { NEW_WRITE_PERMISSION_ACTIONS } from "@/services/permissions/actions";
+import { ensureDefaultRolePermissions } from "@/services/permissions/rolePermissionDefaults";
 import {
   resetDatabase,
   createInstitution,
@@ -15,6 +20,91 @@ beforeEach(async () => {
 });
 
 describe("resolvePermission (real Postgres)", () => {
+  it("installs admin-only defaults for every new write action across institution, group, and trainee scopes", async () => {
+    const institution = await createInstitution();
+    const admin = await createStaffUser({ institutionId: institution.id, role: "ADMIN" });
+    const lead = await createStaffUser({
+      institutionId: institution.id,
+      role: "LEAD_COORDINATOR",
+    });
+    const group = await createGroup(institution.id);
+    const trainee = await createTrainee({ institutionId: institution.id, groupId: group.id });
+    await ensureDefaultRolePermissions(institution.id);
+
+    const scopes: PermissionScope[] = [
+      {},
+      { groupId: group.id },
+      { groupId: group.id, traineeId: trainee.id },
+    ];
+    const adminSubject = { id: admin.id, institutionId: institution.id, role: "ADMIN" as const };
+    const leadSubject = {
+      id: lead.id,
+      institutionId: institution.id,
+      role: "LEAD_COORDINATOR" as const,
+    };
+
+    for (const action of NEW_WRITE_PERMISSION_ACTIONS) {
+      for (const scope of scopes) {
+        await expect(resolvePermission(adminSubject, action, scope)).resolves.toBe(true);
+        await expect(resolvePermission(leadSubject, action, scope)).resolves.toBe(false);
+      }
+    }
+  });
+
+  it("does not let legacy EDIT act as a bypass for new write actions", async () => {
+    const institution = await createInstitution();
+    const counselor = await createStaffUser({ institutionId: institution.id, role: "COUNSELOR" });
+    const group = await createGroup(institution.id);
+    await setRolePermission({
+      institutionId: institution.id,
+      role: "COUNSELOR",
+      action: "EDIT",
+      allowed: true,
+    });
+
+    const canManageGroups = await resolvePermission(
+      { id: counselor.id, institutionId: institution.id, role: "COUNSELOR" },
+      "MANAGE_GROUPS",
+      { groupId: group.id },
+    );
+
+    expect(canManageGroups).toBe(false);
+  });
+
+  it("keeps override precedence and DENY tie behavior for a new write action", async () => {
+    const institution = await createInstitution();
+    const admin = await createStaffUser({ institutionId: institution.id, role: "ADMIN" });
+    const group = await createGroup(institution.id);
+    await setRolePermission({
+      institutionId: institution.id,
+      role: "ADMIN",
+      action: "ENTER_REPORTS",
+      allowed: true,
+    });
+    await setUserPermissionOverride({
+      institutionId: institution.id,
+      staffId: admin.id,
+      action: "ENTER_REPORTS",
+      effect: "ALLOW",
+      groupId: group.id,
+    });
+    await setUserPermissionOverride({
+      institutionId: institution.id,
+      staffId: admin.id,
+      action: "ENTER_REPORTS",
+      effect: "DENY",
+      groupId: group.id,
+    });
+
+    const canEnterReports = await resolvePermission(
+      { id: admin.id, institutionId: institution.id, role: "ADMIN" },
+      "ENTER_REPORTS",
+      { groupId: group.id },
+    );
+
+    expect(canEnterReports).toBe(false);
+  });
+
   it("denies access to a group belonging to a different institution, even for an ADMIN with a blanket allow", async () => {
     const institutionA = await createInstitution("Institution A");
     const institutionB = await createInstitution("Institution B");

@@ -35,7 +35,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `"${process.execPath}" node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port ${port}`,
+    command: `"${process.execPath}" scripts/e2e-start.mjs`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

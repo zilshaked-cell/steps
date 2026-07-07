@@ -39,13 +39,37 @@ describe("parameter weight validation", () => {
     ]);
   });
 
-  it("keeps all-stage and stage-specific parameter scopes separate", () => {
+  it("combines all-stage and stage-specific parameters for the effective stage total", () => {
     expect(
       validateParameterWeightTotals([
         { weightPercent: 100 },
         { stageId: "stage-a", weightPercent: 100 },
       ]),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        stageId: "stage-a",
+        totalWeightPercent: 200,
+        message: "Parameter weights for stage stage-a must sum to 100, got 200",
+      },
+    ]);
+  });
+
+  it("validates stages without explicit overrides when stage ids are provided", () => {
+    expect(
+      validateParameterWeightTotals(
+        [
+          { weightPercent: 80 },
+          { stageId: "stage-a", weightPercent: 20 },
+        ],
+        ["stage-a", "stage-b"],
+      ),
+    ).toEqual([
+      {
+        stageId: "stage-b",
+        totalWeightPercent: 80,
+        message: "Parameter weights for stage stage-b must sum to 100, got 80",
+      },
+    ]);
   });
 
   it("throws a combined error for invalid totals", () => {
@@ -54,8 +78,6 @@ describe("parameter weight validation", () => {
         { weightPercent: 80 },
         { stageId: "stage-a", weightPercent: 110 },
       ]),
-    ).toThrow(
-      "Parameter weights for all-stage parameters must sum to 100, got 80; Parameter weights for stage stage-a must sum to 100, got 110",
-    );
+    ).toThrow("Parameter weights for stage stage-a must sum to 100, got 190");
   });
 });

@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:integration": "node scripts/test-db-migrate.mjs && vitest run --config vitest.integration.config.ts",
-    "test:e2e": "node scripts/test-db-migrate.mjs && node scripts/e2e-build.mjs && playwright test",
+    "test:e2e": "node scripts/test-db-migrate.mjs && node scripts/e2e-build.mjs && node node_modules/@playwright/test/cli.js test",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed"
   },

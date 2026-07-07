@@ -1,13 +1,14 @@
-import type { ParameterEntryStatus } from "@/generated/prisma/enums";
+import type { ParameterEntryStatus, ScoreScale } from "@/generated/prisma/enums";
 import { getTraineeById, listTraineesByGroup } from "@/repositories/traineeRepository";
 import { listScoreEntriesForTraineeInRange } from "@/repositories/scoreEntryRepository";
 import { getPrimaryStageProgramVersion } from "@/repositories/stageProgramRepository";
 import { toDateOnlyKey, dateOnlyKeyToDate, startOfUtcDay, endOfUtcDay } from "@/lib/dateOnly";
-import { calculateStageScore } from "./scoring";
+import { calculateStageScore, maxRawScoreForScale } from "./scoring";
 import { checkDataSufficiency, type DataSufficiencyResult } from "./dataSufficiency";
 
 export interface ParameterScoreDetail {
   parameterDefinitionId: string;
+  scoringProfileParameterId: string | null;
   name: string;
   weightPercent: number;
   status: ParameterEntryStatus;
@@ -43,6 +44,84 @@ function measurementWindow(requiredMeasurementDays: number): { from: Date; to: D
   return { from, to: endOfUtcDay(today) };
 }
 
+interface ApplicableReportParameter {
+  key: string;
+  parameterDefinitionId: string;
+  scoringProfileParameterId: string | null;
+  name: string;
+  weightPercent: number;
+  maxRawScore: number;
+}
+
+function decimalToNumber(value: { toNumber(): number } | number | string | null | undefined): number {
+  if (value == null) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  return value.toNumber();
+}
+
+function parameterAppliesToStage(
+  parameter: { stageId: string | null },
+  currentStageId: string | null,
+): boolean {
+  return parameter.stageId == null || parameter.stageId === currentStageId;
+}
+
+function parametersFromStageProgramVersion(
+  parameters: Array<{
+    id: string;
+    stageId: string | null;
+    name: string;
+    weightPercent: { toNumber(): number };
+    scoreScale: ScoreScale;
+  }>,
+  currentStageId: string | null,
+): ApplicableReportParameter[] {
+  return parameters
+    .filter((parameter) => parameterAppliesToStage(parameter, currentStageId))
+    .map((parameter) => ({
+      key: parameter.id,
+      parameterDefinitionId: parameter.id,
+      scoringProfileParameterId: null,
+      name: parameter.name,
+      weightPercent: parameter.weightPercent.toNumber(),
+      maxRawScore: maxRawScoreForScale(parameter.scoreScale),
+    }));
+}
+
+function parametersFromScoringProfile(
+  parameters: Array<{
+    id: string;
+    sourceParameterDefinitionId: string | null;
+    sourceParameterDefinition: {
+      id: string;
+      name: string;
+      scoreScale: ScoreScale;
+      weightPercent: { toNumber(): number };
+    } | null;
+    stageId: string | null;
+    name: string | null;
+    scoreScale: ScoreScale | null;
+    weightPercent: { toNumber(): number } | null;
+    active: boolean;
+  }>,
+  currentStageId: string | null,
+): ApplicableReportParameter[] {
+  return parameters
+    .filter((parameter) => parameter.active && parameterAppliesToStage(parameter, currentStageId))
+    .map((parameter) => {
+      const source = parameter.sourceParameterDefinition;
+      return {
+        key: parameter.id,
+        parameterDefinitionId: source?.id ?? parameter.sourceParameterDefinitionId ?? parameter.id,
+        scoringProfileParameterId: parameter.id,
+        name: parameter.name ?? source?.name ?? "Unnamed parameter",
+        weightPercent: decimalToNumber(parameter.weightPercent ?? source?.weightPercent),
+        maxRawScore: maxRawScoreForScale(parameter.scoreScale ?? source?.scoreScale ?? "ONE_TO_TEN"),
+      };
+    });
+}
+
 // institutionId is required, not optional: a caller that forgets to pass it must
 // not silently get another institution's report data back.
 export async function buildTraineeFitReport(
@@ -64,59 +143,83 @@ export async function buildTraineeFitReport(
   const applicableParameters = version.parameters.filter(
     (parameter) => parameter.stageId == null || parameter.stageId === trainee.currentStageId,
   );
-  const applicableParameterIds = new Set(applicableParameters.map((parameter) => parameter.id));
+  const legacyParameters = parametersFromStageProgramVersion(
+    applicableParameters,
+    trainee.currentStageId,
+  );
 
   const { from, to } = measurementWindow(version.requiredMeasurementDays);
   const entries = await listScoreEntriesForTraineeInRange(traineeId, from, to);
 
   const entriesByDay = new Map<string, typeof entries>();
   for (const entry of entries) {
-    if (!applicableParameterIds.has(entry.parameterDefinitionId)) continue;
-
     const dayKey = toDateOnlyKey(entry.measurementDate);
     const bucket = entriesByDay.get(dayKey) ?? [];
     bucket.push(entry);
     entriesByDay.set(dayKey, bucket);
   }
 
-  const dailyScores: DailyScore[] = [...entriesByDay.entries()]
-    .map(([dayKey, dayEntries]) => {
-      const entriesByParameterId = new Map(
-        dayEntries.map((entry) => [entry.parameterDefinitionId, entry]),
-      );
-      const parameterScores = applicableParameters.map((parameter) => {
-        const entry = entriesByParameterId.get(parameter.id);
-        return {
-          parameterDefinitionId: parameter.id,
-          name: parameter.name,
-          weightPercent: parameter.weightPercent.toNumber(),
-          status: entry?.status ?? "NOT_SCORED",
-          rawScore: entry?.rawScore ?? null,
-        };
-      });
-      const result = calculateStageScore(
-        parameterScores.map((parameter) => ({
-          weightPercent: parameter.weightPercent,
-          status: parameter.status,
-          rawScore: parameter.rawScore,
-        })),
-      );
-      const parameterDetails: ParameterScoreDetail[] = parameterScores;
-      return { date: dateOnlyKeyToDate(dayKey), totalScore: result.totalScore, parameterDetails };
-    })
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const parametersTouched = new Set<string>();
+  const parametersExpected = new Set<string>();
+  const dailyScores: DailyScore[] = [];
+  for (const [dayKey, dayEntries] of entriesByDay.entries()) {
+    const scoringProfile = dayEntries.find((entry) => entry.measurementReport?.scoringProfile)
+      ?.measurementReport?.scoringProfile;
+    const reportParameters = scoringProfile
+      ? parametersFromScoringProfile(scoringProfile.parameters, trainee.currentStageId)
+      : legacyParameters;
 
-  const parametersTouched = new Set(
-    entries
-      .filter((entry) => applicableParameterIds.has(entry.parameterDefinitionId))
-      .map((entry) => entry.parameterDefinitionId),
-  );
+    const entriesByParameterKey = new Map(
+      dayEntries.flatMap((entry) => {
+        const key = scoringProfile ? entry.scoringProfileParameterId : entry.parameterDefinitionId;
+        return key ? [[key, entry] as const] : [];
+      }),
+    );
+    if (!reportParameters.some((parameter) => entriesByParameterKey.has(parameter.key))) continue;
+    for (const parameter of reportParameters) parametersExpected.add(parameter.key);
+
+    const parameterScores = reportParameters.map((parameter) => {
+      const entry = entriesByParameterKey.get(parameter.key);
+      if (entry) parametersTouched.add(parameter.key);
+      return {
+        parameterDefinitionId: parameter.parameterDefinitionId,
+        scoringProfileParameterId: parameter.scoringProfileParameterId,
+        name: parameter.name,
+        weightPercent: parameter.weightPercent,
+        maxRawScore: parameter.maxRawScore,
+        status: entry?.status ?? "NOT_SCORED",
+        rawScore: entry?.rawScore ?? null,
+      };
+    });
+    const result = calculateStageScore(
+      parameterScores.map((parameter) => ({
+        weightPercent: parameter.weightPercent,
+        status: parameter.status,
+        rawScore: parameter.rawScore,
+        maxRawScore: parameter.maxRawScore,
+      })),
+    );
+    const parameterDetails: ParameterScoreDetail[] = parameterScores.map((parameter) => ({
+      parameterDefinitionId: parameter.parameterDefinitionId,
+      scoringProfileParameterId: parameter.scoringProfileParameterId,
+      name: parameter.name,
+      weightPercent: parameter.weightPercent,
+      status: parameter.status,
+      rawScore: parameter.rawScore,
+    }));
+    dailyScores.push({
+      date: dateOnlyKeyToDate(dayKey),
+      totalScore: result.totalScore,
+      parameterDetails,
+    });
+  }
+  dailyScores.sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const dataSufficiency = checkDataSufficiency({
-    measurementDaysIncluded: entriesByDay.size,
+    measurementDaysIncluded: dailyScores.length,
     measurementDaysRequired: version.requiredMeasurementDays,
     parametersIncluded: parametersTouched.size,
-    parametersExpected: applicableParameters.length,
+    parametersExpected: parametersExpected.size || legacyParameters.length,
   });
 
   return {

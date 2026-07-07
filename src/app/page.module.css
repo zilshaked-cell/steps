@@ -141,7 +141,8 @@
 
 .metricPill,
 .successBadge,
-.warningBadge {
+.warningBadge,
+.archiveBadge {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
@@ -158,6 +159,13 @@
   border: 1px solid #b9d8ce;
   color: #0f5f63;
   background: #eef8f4;
+}
+
+.viewToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 .groupGrid {
@@ -193,6 +201,12 @@
   font-weight: 800;
 }
 
+.groupMeta {
+  color: #65746f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .groupAction,
 .tableLink {
   color: #0f5f63;
@@ -200,7 +214,8 @@
 }
 
 .primaryButton,
-.secondaryButton {
+.secondaryButton,
+.dangerButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -227,6 +242,7 @@
 
 .primaryButton:focus-visible,
 .secondaryButton:focus-visible,
+.dangerButton:focus-visible,
 .brand:focus-visible,
 .groupCard:focus-visible,
 .tableLink:focus-visible {
@@ -248,6 +264,82 @@
 .secondaryButton:hover {
   border-color: #98b7ab;
   background: #f2f7f4;
+}
+
+.dangerButton {
+  color: #ffffff;
+  background: #9f2532;
+}
+
+.dangerButton:hover {
+  background: #7f1d28;
+}
+
+.managementForm {
+  display: grid;
+  max-width: 720px;
+  gap: 14px;
+}
+
+.settingsForm {
+  display: grid;
+  gap: 16px;
+}
+
+.fieldLabel {
+  display: grid;
+  gap: 6px;
+  color: #30413b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fieldLabel input,
+.fieldLabel textarea,
+.fieldLabel select {
+  width: 100%;
+  border: 1px solid #cbd8d2;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #1d2522;
+  background: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.fieldLabel textarea {
+  resize: vertical;
+}
+
+.multiSelect {
+  min-height: 112px;
+}
+
+.vacationList {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.vacationItem {
+  display: grid;
+  gap: 10px;
+  max-width: 720px;
+  border: 1px solid #d6e0da;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.fieldLabel input:focus-visible,
+.fieldLabel textarea:focus-visible,
+.fieldLabel select:focus-visible,
+.settingsTable input:focus-visible,
+.settingsTable textarea:focus-visible,
+.settingsTable select:focus-visible {
+  outline: 3px solid rgba(31, 119, 180, 0.32);
+  outline-offset: 2px;
 }
 
 .tableWrap {
@@ -293,6 +385,58 @@
   background: #f1f6f8;
 }
 
+.settingsTable {
+  min-width: 980px;
+}
+
+.settingsTable input,
+.settingsTable textarea,
+.settingsTable select {
+  width: 100%;
+  border: 1px solid #cbd8d2;
+  border-radius: 6px;
+  padding: 8px 9px;
+  color: #1d2522;
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settingsTable input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #0f5f63;
+}
+
+.settingsTable textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.inlineCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: #65746f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inlineCheck input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.formFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .scoreCell {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
@@ -335,6 +479,12 @@
   background: #e8f6ed;
 }
 
+.archiveBadge {
+  flex-shrink: 0;
+  color: #51605b;
+  background: #e9eeeb;
+}
+
 .warningBadge,
 .warningMessage {
   color: #8a4f00;
@@ -346,10 +496,16 @@
 }
 
 .warningMessage,
-.errorMessage {
+.errorMessage,
+.successMessage {
   border-radius: 8px;
   padding: 12px 14px;
   line-height: 1.55;
+}
+
+.successMessage {
+  color: #1f6a45;
+  background: #e8f6ed;
 }
 
 .errorMessage {

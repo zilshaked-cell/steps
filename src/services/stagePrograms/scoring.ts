@@ -1,12 +1,12 @@
-import type { ParameterEntryStatus } from "@/generated/prisma/enums";
+import type { ParameterEntryStatus, ScoreScale } from "@/generated/prisma/enums";
 
 export interface ParameterScoreInput {
   weightPercent: number;
   status: ParameterEntryStatus;
-  // 1–10, required when status is SCORED. Per spec, the 1–10 scale is a user
-  // judgment; whether a manual 0 should ever be allowed is an open product
-  // question, not decided here — see AGENTS.md-equivalent conversation notes.
+  // Required when status is SCORED. Defaults to the legacy 1-10 scale when an
+  // older caller has not been wired to per-parameter ScoreScale yet.
   rawScore?: number | null;
+  maxRawScore?: number;
 }
 
 export interface StageScoreResult {
@@ -17,6 +17,18 @@ export interface StageScoreResult {
   totalScore: number;
   includedWeightPercent: number;
   excludedWeightPercent: number;
+}
+
+export function maxRawScoreForScale(scale: ScoreScale | null | undefined): number {
+  switch (scale) {
+    case "ONE_TO_THREE":
+      return 3;
+    case "ONE_TO_ONE_HUNDRED":
+      return 100;
+    case "ONE_TO_TEN":
+    default:
+      return 10;
+  }
 }
 
 export function calculateStageScore(parameters: ParameterScoreInput[]): StageScoreResult {
@@ -33,10 +45,11 @@ export function calculateStageScore(parameters: ParameterScoreInput[]): StageSco
     includedWeightPercent += parameter.weightPercent;
 
     if (parameter.status === "SCORED") {
-      if (parameter.rawScore == null || parameter.rawScore < 1 || parameter.rawScore > 10) {
-        throw new Error("rawScore must be between 1 and 10 when status is SCORED");
+      const maxRawScore = parameter.maxRawScore ?? 10;
+      if (parameter.rawScore == null || parameter.rawScore < 1 || parameter.rawScore > maxRawScore) {
+        throw new Error(`rawScore must be between 1 and ${maxRawScore} when status is SCORED`);
       }
-      earnedPoints += (parameter.weightPercent * parameter.rawScore) / 10;
+      earnedPoints += (parameter.weightPercent * parameter.rawScore) / maxRawScore;
     }
     // NOT_SCORED: contributes 0 points but its weight stays in includedWeightPercent.
   }

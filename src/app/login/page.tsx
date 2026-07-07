@@ -4,11 +4,11 @@ import styles from "../page.module.css";
 import { auth, signIn } from "@/lib/auth";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  setup: "חסרה הגדרת Google OAuth ב-.env.",
+  setup: "חסרה הגדרת התחברות Google בסביבת ההרצה.",
   AccessDenied: "חשבון Google לא מאושר למערכת. ודאו שהאימייל מאומת וקיים כמשתמש צוות פעיל.",
   OAuthCallbackError: "Google החזירה שגיאת התחברות. נסו שוב.",
   OAuthSignin: "לא הצלחנו להתחיל התחברות מול Google.",
-  Configuration: "יש בעיה בהגדרת Google OAuth. בדרך כלל זה Client Secret שגוי או Secret שלא שייך ל-Client ID.",
+  Configuration: "יש בעיה בהגדרת התחברות Google. בדרך כלל מדובר בסוד לקוח שגוי או בסוד שאינו תואם למזהה הלקוח.",
 };
 
 function isGoogleAuthConfigured() {
@@ -55,7 +55,7 @@ export default async function LoginPage({
         )}
         {!isConfigured && (
           <p className={styles.warningMessage}>
-            יש להגדיר `AUTH_GOOGLE_ID` ו-`AUTH_GOOGLE_SECRET` לפני התחברות עם Google.
+            יש להגדיר מזהה לקוח וסוד לקוח של Google לפני התחברות.
           </p>
         )}
         <form action={googleLoginAction}>
